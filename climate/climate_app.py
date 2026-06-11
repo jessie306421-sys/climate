@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 # 1. 页面基本配置与高级 UI 样式注入 (CSS)
 # ==========================================
 st.set_page_config(
-    page_title="全球气候调研分析系统 v5.1",
+    page_title="美国气候分析系统",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -70,7 +70,7 @@ US_CAPITALS = {
     "Maine (Augusta)": {"lat": 44.310, "lon": -69.779, "region": "新英格兰"},
     "Maryland (Annapolis)": {"lat": 38.978, "lon": -76.492, "region": "中大西洋"},
     "Massachusetts (Boston)": {"lat": 42.360, "lon": -71.058, "region": "新英格兰"},
-    "Michigan (Lansing)": {"lat": 42.732, "sn_lon": -84.555, "region": "东北中部"},
+    "Michigan (Lansing)": {"lat": 42.732, "lon": -84.555, "region": "东北中部"},
     "Minnesota (St. Paul)": {"lat": 44.953, "lon": -93.089, "region": "西北中部"},
     "Mississippi (Jackson)": {"lat": 32.298, "lon": -90.184, "region": "南中央"},
     "Missouri (Jefferson City)": {"lat": 38.576, "lon": -92.173, "region": "西北中部"},
@@ -101,25 +101,18 @@ US_CAPITALS = {
     "Wyoming (Cheyenne)": {"lat": 41.140, "lon": -104.820, "region": "山地"}
 }
 
-# 修正：将部分缺失的 key 统一
-for k, v in US_CAPITALS.items():
-    if "sn_lon" in v:
-        v["lon"] = v.pop("sn_lon")
-
 # ==========================================
-# 3. 顶部信息卡
+# 3. 顶部信息卡 (优化标题文字与标牌)
 # ==========================================
 st.markdown("""
 <div class="system-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <span class="system-title">🌍 全球气候调研分析系统</span>
-            <p class="system-subtitle">Climate Research & Tourism Analytics • 全美50州覆盖 • 级联决策总网</p>
+            <span class="system-title">🌍 美国气候分析</span>
+            <p class="system-subtitle">US 50 States Coverage • Cascading Decision Network • 全美50州覆盖 • 级联决策总网</p>
         </div>
         <div style="display: flex; gap: 6px;">
             <span class="badge-tag" style="background-color: #EFF6FF; color: #1E40AF;">📅 实时更新</span>
-            <span class="badge-tag" style="background-color: #F1F5F9; color: #475569;">Open-Meteo API</span>
-            <span class="badge-tag" style="background-color: #ECFDF5; color: #065F46;">v5.1-Stable</span>
         </div>
     </div>
 </div>
@@ -132,23 +125,22 @@ temp_threshold = st.sidebar.slider(
     min_value=10.0, max_value=25.0, value=16.0, step=0.5
 )
 
-# 物理学降级仿真算法（优化版：结合6月份北美典型气候特点，让降级数据更贴合各州实际情况）
+# 物理学降级仿真算法（优化版：支持生成14天数据）
 def generate_geographical_weather(lat, lon, seed_offset=0.0):
-    # 基础温度：受纬度影响，同时加入海拔/区域的大致微调
     base_temp = 35.0 - (abs(lat) - 25) * 0.7 + seed_offset
     base_temp = max(5.0, min(36.0, base_temp))
     
     seed_val = int(abs(lat + lon) * 100) + int(abs(seed_offset) * 10)
     np.random.seed(seed_val)
     
-    max_temps = [round(base_temp + np.random.uniform(2, 6), 1) for _ in range(7)]
-    min_temps = [round(base_temp - np.random.uniform(4, 8), 1) for _ in range(7)]
-    precip = [int(np.random.uniform(5, 75)) for _ in range(7)]
-    humidity = [int(np.random.uniform(45, 85)) for _ in range(7)]
-    wind = [int(np.random.uniform(6, 20)) for _ in range(7)]
-    weather_codes = [int(np.random.choice([0, 1, 2, 3, 61])) for _ in range(7)]
+    max_temps = [round(base_temp + np.random.uniform(2, 6), 1) for _ in range(14)]
+    min_temps = [round(base_temp - np.random.uniform(4, 8), 1) for _ in range(14)]
+    precip = [int(np.random.uniform(5, 75)) for _ in range(14)]
+    humidity = [int(np.random.uniform(45, 85)) for _ in range(14)]
+    wind = [int(np.random.uniform(6, 20)) for _ in range(14)]
+    weather_codes = [int(np.random.choice([0, 1, 2, 3, 61])) for _ in range(14)]
     
-    # 模拟周趋势
+    # 模拟5周趋势
     trend_vals = []
     current_val = base_temp
     for _ in range(5):
@@ -156,7 +148,7 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
         trend_vals.append(round(current_val, 1))
         
     return {
-        "time": [(datetime.date.today() + datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)],
+        "time": [(datetime.date.today() + datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(14)],
         "temperature_2m_max": max_temps,
         "temperature_2m_min": min_temps,
         "precipitation_probability": precip,
@@ -167,11 +159,10 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
         "is_simulated": True
     }
 
-# 估算温度辅助函数（优化：增加超时时间至 5.0 秒，并支持自适应时区）
+# 估算温度辅助函数
 @st.cache_data(ttl=600)
 def quick_check_temp(lat, lon):
     try:
-        # 使用 timezone=auto 让服务端自动根据经纬度匹配当地时区
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
         res = requests.get(url, timeout=5.0)
         if res.status_code == 200:
@@ -180,27 +171,25 @@ def quick_check_temp(lat, lon):
             return round((mx + mn) / 2, 1)
     except Exception:
         pass
-    # 降级公式
     return round(35.0 - (abs(lat) - 25) * 0.7, 1)
 
-# 获取统一天气数据（优化：延长超时时间至 5.0s，提高获取真实天气的成功率）
+# 获取统一天气数据（扩展至14天）
 @st.cache_data(ttl=600)
 def get_unified_weather(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability,relative_humidity_2m_max,wind_speed_10m_max,weather_code&timezone=auto"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability,relative_humidity_2m_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
     try:
         res = requests.get(url, timeout=5.0)
         if res.status_code == 200:
             data = res.json()["daily"]
             means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
             
-            # 使用真实的7天预测均值来平滑估算中长期趋势（前3天为Week 1，后4天为Week 2）
+            # 周均温计算
             w1 = round(np.mean(means[0:3]), 1)
             w2 = round(np.mean(means[3:7]), 1)
+            w3 = round(np.mean(means[7:10]), 1)
+            w4 = round(np.mean(means[10:14]), 1)
             
-            # Week 3-5 仍为统计模拟，但基于真实前两周的基础进行微幅波动，而非单向直线下滑
             np.random.seed(int(abs(lat)*10))
-            w3 = round(w2 + np.random.uniform(-1.0, 1.0), 1)
-            w4 = round(w3 + np.random.uniform(-1.5, 1.5), 1)
             w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
             
             data["weeks_trend"] = [w1, w2, w3, w4, w5]
@@ -208,23 +197,18 @@ def get_unified_weather(lat, lon):
             return data
     except Exception:
         pass
-    # 彻底无法连接时，进入降级模拟
     return generate_geographical_weather(lat, lon)
 
-
 # ==========================================
-# 4. 一级筛选栏
+# 4. 一级筛选栏 (更名为气象过滤中心 + 自适应单/多选)
 # ==========================================
-st.markdown("##### 🔍 气象联合过滤中心")
+st.markdown("##### 🔍 气象过滤中心")
 filter_cols = st.columns(3)
 
-with filter_cols[0]:
-    selected_zone_filter = st.selectbox(
-        "1. 冷暖类型筛选 (Climate Zone)", 
-        options=["全部 (All States)", "冷区 (Cold Zone)", "暖区 (Warm Zone)"]
-    )
+if "active_panel" not in st.session_state:
+    st.session_state.active_panel = "天气预报"
 
-# 动态划分冷暖州
+# 预先进行冷暖州分类
 cold_states_list = []
 warm_states_list = []
 for state, coords in US_CAPITALS.items():
@@ -234,55 +218,119 @@ for state, coords in US_CAPITALS.items():
     else:
         warm_states_list.append(state)
 
-if "冷区" in selected_zone_filter:
-    states_options = sorted(cold_states_list)
-elif "暖区" in selected_zone_filter:
-    states_options = sorted(warm_states_list)
+# 4.1 根据当前活跃面板，渲染单选或多选筛选器
+if st.session_state.active_panel == "天气预报":
+    # 天气预报页面：单选模式
+    with filter_cols[0]:
+        selected_zone_filter = st.selectbox(
+            "1. 冷暖类型筛选 (Climate Zone)", 
+            options=["全部 (All States)", "冷区 (Cold Zone)", "暖区 (Warm Zone)"],
+            key="zone_single"
+        )
+    
+    if "冷区" in selected_zone_filter:
+        states_options = sorted(cold_states_list)
+    elif "暖区" in selected_zone_filter:
+        states_options = sorted(warm_states_list)
+    else:
+        states_options = sorted(list(US_CAPITALS.keys()))
+
+    with filter_cols[1]:
+        selected_state = st.selectbox(
+            "2. 选择代表州 (State)", 
+            options=states_options,
+            key="state_single"
+        )
+    selected_states = [selected_state] # 统一包装为列表
+
 else:
-    states_options = sorted(list(US_CAPITALS.keys()))
+    # 天气趋势页面：多选模式
+    with filter_cols[0]:
+        selected_zones = st.multiselect(
+            "1. 冷暖类型筛选 (Climate Zone) - 可多选",
+            options=["冷区 (Cold)", "暖区 (Warm)"],
+            default=["冷区 (Cold)", "暖区 (Warm)"],
+            key="zone_multi"
+        )
+    
+    states_options = []
+    if "冷区 (Cold)" in selected_zones:
+        states_options.extend(cold_states_list)
+    if "暖区 (Warm)" in selected_zones:
+        states_options.extend(warm_states_list)
+    if not selected_zones:
+        states_options = list(US_CAPITALS.keys())
+    
+    states_options = sorted(list(set(states_options)))
 
-if not states_options:
-    states_options = sorted(list(US_CAPITALS.keys()))
+    with filter_cols[1]:
+        # 默认选中前两个州，防止图表空白
+        default_selection = [states_options[0], states_options[1]] if len(states_options) >= 2 else states_options
+        selected_states = st.multiselect(
+            "2. 选择代表州 (State) - 可多选",
+            options=states_options,
+            default=default_selection,
+            key="state_multi"
+        )
+    if not selected_states:
+        st.warning("请在上方选择至少一个代表州以加载中期趋势。")
+        st.stop()
 
-with filter_cols[1]:
-    selected_state = st.selectbox(
-        "2. 选择代表州 (State)", 
-        options=states_options,
-        key="global_state_selector"
-    )
-
-state_lat = US_CAPITALS[selected_state]["lat"]
-state_lon = US_CAPITALS[selected_state]["lon"]
-
-# 获取当前州天气数据
-active_weather = get_unified_weather(state_lat, state_lon)
-
-# 提取当前温度状态
-state_calc_temp = round(np.mean([active_weather["temperature_2m_max"][0], active_weather["temperature_2m_min"][0]]), 1)
-state_zone = "冷区 (Cold)" if state_calc_temp < temp_threshold else "暖区 (Warm)"
-zone_emoji = "❄️" if "冷" in state_zone else "☀️"
-
-with filter_cols[2]:
-    st.metric(
-        label="3. 当前代表州状态 (Status)", 
-        value=f"{zone_emoji} {state_zone}", 
-        delta=f"今日均温: {state_calc_temp}°C"
-    )
-
-# 数据源状态反馈提示
-if active_weather.get("is_simulated", False):
-    st.warning("⚠️ 提示：由于网络连接超时，已自动切换为【高精度地理气候模拟算法】生成的备用气象数据。")
+# 4.2 第三个卡片：状态指示器自适应显示
+if len(selected_states) == 1:
+    # 单个州的状态显示
+    state_lat = US_CAPITALS[selected_states[0]]["lat"]
+    state_lon = US_CAPITALS[selected_states[0]]["lon"]
+    active_weather_main = get_unified_weather(state_lat, state_lon)
+    state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
+    state_zone = "冷区 (Cold)" if state_calc_temp < temp_threshold else "暖区 (Warm)"
+    zone_emoji = "❄️" if "冷" in state_zone else "☀️"
+    
+    with filter_cols[2]:
+        st.metric(
+            label="3. 当前代表州状态 (Status)", 
+            value=f"{zone_emoji} {state_zone}", 
+            delta=f"今日均温: {state_calc_temp}°C"
+        )
 else:
-    st.success("✅ 数据连接正常：当前正在使用【Open-Meteo 实时气象站数据】进行分析。")
+    # 多个州联合的状态显示
+    temps = []
+    simulated_flags = []
+    for s in selected_states:
+        s_lat, s_lon = US_CAPITALS[s]["lat"], US_CAPITALS[s]["lon"]
+        s_data = get_unified_weather(s_lat, s_lon)
+        t = round(np.mean([s_data["temperature_2m_max"][0], s_data["temperature_2m_min"][0]]), 1)
+        temps.append(t)
+        simulated_flags.append(s_data.get("is_simulated", False))
+    
+    avg_temp = round(np.mean(temps), 1)
+    avg_zone = "冷区 (Cold)" if avg_temp < temp_threshold else "暖区 (Warm)"
+    zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
+    
+    with filter_cols[2]:
+        st.metric(
+            label="3. 组合分析状态 (Combined)",
+            value=f"已选 {len(selected_states)} 个地区",
+            delta=f"组合今日均温: {avg_temp}°C"
+        )
+
+# 数据源状态提示（若所选地区中有一个使用了模拟，则给出友情提示）
+any_simulated = False
+if len(selected_states) == 1:
+    any_simulated = active_weather_main.get("is_simulated", False)
+else:
+    any_simulated = any(simulated_flags)
+
+if any_simulated:
+    st.warning("⚠️ 提示：部分或全部所选地区由于接口连接超时，已自动使用【高精度地理气候模拟算法】生成的备份气象数据。")
+else:
+    st.success("✅ 数据连接正常：已成功连接至【Open-Meteo 实时气象数据库】。")
 
 st.write("---")
 
 # ==========================================
 # 5. 双导航控制大按钮 (Tab Switcher)
 # ==========================================
-if "active_panel" not in st.session_state:
-    st.session_state.active_panel = "天气预报"
-
 col_btn_left, col_btn_right = st.columns(2)
 with col_btn_left:
     if st.button("📅 天气预报", key="btn_panel_forecast", use_container_width=True):
@@ -297,37 +345,28 @@ with col_btn_right:
 st.write("")
 
 # ==========================================
-# 7. 面板 A 渲染：天气预报
+# 6. 面板 A 渲染：天气预报 (保持单选大卡片显示)
 # ==========================================
 if st.session_state.active_panel == "天气预报":
-    st.subheader(f"📅 {selected_state} • 7日高精预报")
+    # 此时 selected_states 必定只有一个元素
+    target_state = selected_states[0]
+    st.subheader(f"📅 {target_state} • 7日高精预报")
     
     cols_grid = st.columns(2)
     
     def get_wmo_info(code):
-        # 兼容处理更多常见的 WMO 天气代码
         mapping = {
-            0: ("晴朗", "☀️"), 
-            1: ("晴间多云", "🌤️"), 
-            2: ("多云", "⛅"), 
-            3: ("阴天", "☁️"), 
-            45: ("有雾", "🌫️"),
-            48: ("沉积雾", "🌫️"),
-            51: ("毛毛雨", "🌧️"),
-            61: ("小雨", "🌧️"),
-            63: ("中雨", "🌧️"),
-            65: ("大雨", "🌧️"),
-            71: ("小雪", "❄️"),
-            73: ("中雪", "❄️"),
-            75: ("大雪", "❄️"),
-            80: ("阵雨", "🌦️"),
-            95: ("雷阵雨", "⛈️")
+            0: ("晴朗", "☀️"), 1: ("晴间多云", "🌤️"), 2: ("多云", "⛅"), 3: ("阴天", "☁️"), 
+            45: ("有雾", "🌫️"), 48: ("沉积雾", "🌫️"), 51: ("毛毛雨", "🌧️"), 61: ("小雨", "🌧️"), 
+            63: ("中雨", "🌧️"), 65: ("大雨", "🌧️"), 71: ("小雪", "❄️"), 73: ("中雪", "❄️"), 
+            75: ("大雪", "❄️"), 80: ("阵雨", "🌦️"), 95: ("雷阵雨", "⛈️")
         }
         return mapping.get(code, ("多云", "⛅"))
 
+    # 直接使用前面获取好的 active_weather_main
     for i in range(7):
         col_idx = i % 2
-        date_str = active_weather["time"][i]
+        date_str = active_weather_main["time"][i]
         date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
         
         day_label = date_obj.strftime("%A")
@@ -338,12 +377,12 @@ if st.session_state.active_panel == "天气预报":
         
         if i == 0: day_label_zh = "今天"
             
-        cond_text, cond_emoji = get_wmo_info(active_weather["weather_code"][i])
-        temp_max = active_weather["temperature_2m_max"][i]
-        temp_min = active_weather["temperature_2m_min"][i]
-        precip = active_weather["precipitation_probability"][i]
-        humidity = active_weather["relative_humidity_2m_max"][i]
-        wind = active_weather["wind_speed_10m_max"][i]
+        cond_text, cond_emoji = get_wmo_info(active_weather_main["weather_code"][i])
+        temp_max = active_weather_main["temperature_2m_max"][i]
+        temp_min = active_weather_main["temperature_2m_min"][i]
+        precip = active_weather_main["precipitation_probability"][i]
+        humidity = active_weather_main["relative_humidity_2m_max"][i]
+        wind = active_weather_main["wind_speed_10m_max"][i]
         
         card_class = "weather-card weather-card-today" if i == 0 else "weather-card"
         
@@ -373,63 +412,92 @@ if st.session_state.active_panel == "天气预报":
             st.markdown(card_html, unsafe_allow_html=True)
 
 # ==========================================
-# 8. 面板 B 渲染：天气趋势与气候分析结论卡
+# 7. 面板 B 渲染：天气趋势 (多选平均值趋势对比)
 # ==========================================
 elif st.session_state.active_panel == "天气趋势":
-    st.subheader(f"📈 {selected_state} • 中长期趋势对比")
+    st.subheader("📈 美国多区气候 • 中期趋势")
     
-    col_sel_a, col_sel_b = st.columns(2)
-    with col_sel_a:
-        year_a = st.selectbox("选择基准年份 A / Year A:", ["2026年 (当前预测)", "2025年 (历史数据)"])
-    with col_sel_b:
-        year_b = st.selectbox("选择对照年份 B / Year B:", ["2025年 (历史同期)", "2024年 (历史同期)"])
+    # 新增选项：预测时间跨度（未来7天、未来14天、未来5周）
+    forecast_span = st.selectbox(
+        "选择预测跨度 (Forecast Range):",
+        options=["未来7天 (Next 7 Days)", "未来14天 (Next 14 Days)", "未来5周 (Next 5 Weeks)"],
+        key="span_selector"
+    )
+    
+    # 批量提取选中所有州的气候数据
+    states_weather_data = {}
+    for s in selected_states:
+        s_lat, s_lon = US_CAPITALS[s]["lat"], US_CAPITALS[s]["lon"]
+        states_weather_data[s] = get_unified_weather(s_lat, s_lon)
+    
+    # 动态匹配预测时间段
+    if "未来7天" in forecast_span:
+        x_timeline = [states_weather_data[selected_states[0]]["time"][i] for i in range(7)]
+        y_data_per_state = {}
+        for s in selected_states:
+            # 每日均温取最大和最小的均值
+            y_data_per_state[s] = [
+                round((states_weather_data[s]["temperature_2m_max"][i] + states_weather_data[s]["temperature_2m_min"][i]) / 2, 1)
+                for i in range(7)
+            ]
+        y_axis_title = "日平均气温 (°C)"
         
-    weeks_x = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
-    temps_a = active_weather["weeks_trend"]
-    
-    # 基于当前数据产生合理的对照波动（由于公共API无法直接且快速回溯多年历史的周均温，这里采用更合理的随机温漂算法模拟历史均温）
-    historical_package = generate_geographical_weather(state_lat, state_lon, seed_offset=-1.8)
-    temps_b = historical_package["weeks_trend"]
+    elif "未来14天" in forecast_span:
+        x_timeline = [states_weather_data[selected_states[0]]["time"][i] for i in range(14)]
+        y_data_per_state = {}
+        for s in selected_states:
+            y_data_per_state[s] = [
+                round((states_weather_data[s]["temperature_2m_max"][i] + states_weather_data[s]["temperature_2m_min"][i]) / 2, 1)
+                for i in range(14)
+            ]
+        y_axis_title = "日平均气温 (°C)"
+        
+    else:  # "未来5周"
+        x_timeline = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
+        y_data_per_state = {}
+        for s in selected_states:
+            y_data_per_state[s] = states_weather_data[s]["weeks_trend"]
+        y_axis_title = "周平均气温 (°C)"
 
+    # 计算所选城市的平均温度趋势
+    points_count = len(x_timeline)
+    averaged_trend = []
+    for i in range(points_count):
+        points_sum = [y_data_per_state[s][i] for s in selected_states]
+        averaged_trend.append(round(np.mean(points_sum), 1))
+
+    # 构建趋势图表
     fig = go.Figure()
     
-    # 年份 A
+    # 若选择了多个城市，将单个城市绘制为浅色背景辅助虚线，避免视觉拥挤的同时提供参考
+    if len(selected_states) > 1:
+        for s in selected_states:
+            fig.add_trace(go.Scatter(
+                x=x_timeline, y=y_data_per_state[s],
+                mode='lines',
+                name=f"{s} 趋势",
+                line=dict(color='rgba(148, 163, 184, 0.4)', width=1.5, dash='dot'),
+                hoverinfo='all' if len(selected_states) <= 6 else 'skip'
+            ))
+
+    # 绘制粗体平均趋势主线
+    main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
     fig.add_trace(go.Scatter(
-        x=weeks_x, y=temps_a,
+        x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
-        name=f"年份 A: {year_a}",
-        line=dict(color='#EF4444', width=4, shape='spline'),
+        name="已选城市/州 平均值",
+        line=dict(color=main_color, width=4.5, shape='spline'),
         marker=dict(size=10, symbol='circle'),
-        text=[f"{v}°" for v in temps_a],
+        text=[f"{v}°" for v in averaged_trend],
         textposition="top center",
-        textfont=dict(size=11, color="#1E293B")
+        textfont=dict(size=11, color="#0F172A", style="bold")
     ))
-
-    # 年份 B
-    fig.add_trace(go.Scatter(
-        x=weeks_x, y=temps_b,
-        mode='lines+markers+text',
-        name=f"对比 B: {year_b}",
-        line=dict(color='#3B82F6', width=3, dash='dash', shape='spline'),
-        marker=dict(size=8, symbol='square'),
-        text=[f"{v}°" for v in temps_b],
-        textposition="bottom center",
-        textfont=dict(size=11, color="#64748B")
-    ))
-
-    # “现在”分界线
-    fig.add_vline(x="Week 2", line_width=1.5, line_dash="dash", line_color="#F59E0B")
-    fig.add_annotation(
-        x="Week 2", y=max(temps_a + temps_b) + 1.5,
-        text="现在 (Now)", showarrow=False,
-        bgcolor="#FEF3C7", bordercolor="#F59E0B", borderwidth=1, borderpad=4
-    )
 
     fig.update_layout(
         plot_bgcolor='#FFFFFF',
         paper_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
-        yaxis=dict(title='周均温 (°C)', showgrid=True, gridcolor='#F1F5F9', ticksuffix="°C"),
+        yaxis=dict(title=y_axis_title, showgrid=True, gridcolor='#F1F5F9', ticksuffix="°C"),
         legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
         margin=dict(l=40, r=40, t=20, b=40),
         height=450
@@ -438,25 +506,22 @@ elif st.session_state.active_panel == "天气趋势":
     st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 9. 智能气候分析结论卡 (免看图决策卡)
+    # 8. 智能气候分析结论卡 (免看图决策卡)
     # ==========================================
     st.write("---")
     
-    avg_diff = round(np.mean(temps_a) - np.mean(temps_b), 1)
-    diff_symbol = "高于" if avg_diff >= 0 else "低于"
-    
-    trend_symbol = "↗ 逐步上升" if temps_a[-1] > temps_a[0] else ("↘ 逐步下降" if temps_a[-1] < temps_a[0] else "→ 基本平稳")
-    
-    is_cold = state_calc_temp < temp_threshold
+    # 均值走势描述
+    trend_symbol = "↗ 逐步上升" if averaged_trend[-1] > averaged_trend[0] else ("↘ 逐步下降" if averaged_trend[-1] < averaged_trend[0] else "→ 基本平稳")
+    is_cold = np.mean(averaged_trend) < temp_threshold
     rec_tags = "秋装服饰 / 防风外套 / 针织衫 / 卫衣" if is_cold else "夏季服饰 / 轻薄T恤 / 户外用品 / 防晒产品"
     
     analysis_html = f"""
     <div class="analysis-card">
-        <h3 style="margin: 0 0 15px 0; color: #1E293B; font-size: 18px;">📊 气候分析结论</h3>
+        <h3 style="margin: 0 0 15px 0; color: #1E293B; font-size: 18px;">📊 气候分析结论 (基于所选地区平均值)</h3>
         <div style="line-height: 1.8; font-size: 14px; color: #475569;">
-            <p><strong>平均温差：</strong> 预计本阶段温度较往年同期 <strong>{diff_symbol} {abs(avg_diff)}°C</strong></p>
-            <p><strong>未来5周温度走势：</strong> <span style="font-weight: bold; color: {'#EF4444' if '上升' in trend_symbol else '#3B82F6'};">{trend_symbol}</span></p>
-            <p><strong>气候级别：</strong> <span style="font-weight: bold; color: {'#3B82F6' if is_cold else '#F97316'};">{"冷区 (Cold Zone)" if is_cold else "暖区 (Warm Zone)"}</span></p>
+            <p><strong>预测期内平均气温：</strong> 预计为 <strong>{round(np.mean(averaged_trend), 1)}°C</strong></p>
+            <p><strong>所选跨度温度走势：</strong> <span style="font-weight: bold; color: {'#EF4444' if '上升' in trend_symbol else '#3B82F6'};">{trend_symbol}</span></p>
+            <p><strong>综合气候分类评定：</strong> <span style="font-weight: bold; color: {'#3B82F6' if is_cold else '#F97316'};">{"冷区 (Cold Zone)" if is_cold else "暖区 (Warm Zone)"}</span></p>
             <p><strong>供应链/陈列推荐关注：</strong> <span style="font-weight: bold; color: #0F766E;">{rec_tags}</span></p>
         </div>
     </div>
