@@ -436,23 +436,7 @@ elif st.session_state.active_panel == "天气趋势":
     # ==========================================
     fig = go.Figure()
     
-    # 1. 阈值高亮背景色带 (layer='below' 确保不遮挡数据线和网格)
-    # 阈值以下设定为淡蓝色
-    fig.add_hrect(
-        y0=-20, y1=temp_threshold, 
-        fillcolor="rgba(59, 130, 246, 0.08)", 
-        line_width=0, 
-        layer="below"
-    )
-    # 阈值以上设定为淡红色
-    fig.add_hrect(
-        y0=temp_threshold, y1=60, 
-        fillcolor="rgba(239, 68, 68, 0.08)", 
-        line_width=0, 
-        layer="below"
-    )
-
-    # 2. 单个州的参考细线
+    # 1. 单个州的参考细线
     if len(selected_states) > 1:
         for s in selected_states:
             fig.add_trace(go.Scatter(
@@ -463,7 +447,7 @@ elif st.session_state.active_panel == "天气趋势":
                 hoverinfo='all' if len(selected_states) <= 6 else 'skip'
             ))
 
-    # 3. 确定折线颜色 (选择冷区强制蓝，选择暖区强制红)
+    # 2. 确定折线颜色 (选择冷区强制蓝，选择暖区强制红)
     if "冷区" in selected_zone_filter:
         main_color = '#3B82F6' # 经典蓝
     elif "暖区" in selected_zone_filter:
@@ -472,7 +456,7 @@ elif st.session_state.active_panel == "天气趋势":
         # 全部模式下根据均值大小自动切换
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
-    # 4. 绘制平均趋势主线 (使用虚线 dash='dash'，移除 font.style 以避开 Plotly 报错)
+    # 3. 绘制平均趋势主线 (使用虚线 dash='dash'，移除 font.style 以避开 Plotly 报错)
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
