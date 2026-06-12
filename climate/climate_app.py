@@ -159,52 +159,59 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
         "is_simulated": True
     }
 
-# 估算温度辅助函数（优化：增加请求头伪装并改用 http 协议绕过限制）
-@st.cache_data(ttl=600)
-def quick_check_temp(lat, lon):
-    try:
-        # 使用 http 协议避开 SSL 证书握手延迟
-        url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
-        # 伪装成真实 Chrome 浏览器，防止被云端 API 判定为恶意爬虫而拦截
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        res = requests.get(url, headers=headers, timeout=5.0)
-        if res.status_code == 200:
-            mx = res.json()["daily"]["temperature_2m_max"][0]
-            mn = res.json()["daily"]["temperature_2m_min"][0]
-            return round((mx + mn) / 2, 1)
-    except Exception:
-        pass
-    return round(35.0 - (abs(lat) - 25) * 0.7, 1)
 
-# 获取统一天气数据（优化：增加请求头伪装并改用 http 协议绕过限制）
-@st.cache_data(ttl=600)
-def get_unified_weather(lat, lon):
+# ==========================================
+# 缓存层：只缓存【真正请求成功】的原始 API 数据
+# ==========================================
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_raw_api_data(lat, lon):
     url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability,relative_humidity_2m_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    # 尝试拉取数据，若失败则抛出异常，绝不向下污染缓存
+    res = requests.get(url, headers=headers, timeout=5.0)
+    if res.status_code == 200:
+        return res.json()["daily"]
+    raise RuntimeWarning("API returned non-200 status")
+
+# ==========================================
+# 业务层：不加 @st.cache_data，确保失败时不锁死缓存
+# ==========================================
+def quick_check_temp(lat, lon):
     try:
-        res = requests.get(url, headers=headers, timeout=5.0)
-        if res.status_code == 200:
-            data = res.json()["daily"]
-            means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
-            
-            w1 = round(np.mean(means[0:3]), 1)
-            w2 = round(np.mean(means[3:7]), 1)
-            w3 = round(np.mean(means[7:10]), 1)
-            w4 = round(np.mean(means[10:14]), 1)
-            
-            np.random.seed(int(abs(lat)*10))
-            w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
-            
-            data["weeks_trend"] = [w1, w2, w3, w4, w5]
-            data["is_simulated"] = False
-            return data
+        # 只尝试调用缓存成功的 API 处理器
+        data = fetch_raw_api_data(lat, lon)
+        mx = data["temperature_2m_max"][0]
+        mn = data["temperature_2m_min"][0]
+        return round((mx + mn) / 2, 1)
     except Exception:
         pass
-    return generate_geographical_weather(lat, lon)
+    # 失败时不写入缓存，直接实时估算
+    return round(35.0 - (abs(lat) - 25) * 0.7, 1)
+
+
+def get_unified_weather(lat, lon):
+    try:
+        # 只尝试调用缓存成功的 API 处理器
+        data = fetch_raw_api_data(lat, lon).copy() # copy 防止污染原缓存数据
+        means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
+        
+        w1 = round(np.mean(means[0:3]), 1)
+        w2 = round(np.mean(means[3:7]), 1)
+        w3 = round(np.mean(means[7:10]), 1)
+        w4 = round(np.mean(means[10:14]), 1)
+        
+        np.random.seed(int(abs(lat)*10))
+        w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
+        
+        data["weeks_trend"] = [w1, w2, w3, w4, w5]
+        data["is_simulated"] = False
+        return data
+    except Exception:
+        # 如果获取失败，动态返回仿真数据，但绝不写进 `@st.cache_data` 的缓存中
+        return generate_geographical_weather(lat, lon)
+
 
 # ==========================================
 # 4. 一级筛选栏 (气象过滤中心 + 均改为单选冷暖)
