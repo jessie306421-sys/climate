@@ -395,8 +395,10 @@ if st.session_state.active_panel == "天气预报":
                 </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px;">
-                <span style="font-size: 32px; font-weight: 800; color: #0F172A; line-height: 1;">{int(temp_max)}°</span>
-                <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">{int(temp_min)}°C / {int(temp_max)}°C</span>
+                <!-- 左下角大字展示：最低温° - 最高温° -->
+                <span style="font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1;">{int(temp_min)}° - {int(temp_max)}°</span>
+                <!-- 右下角小字展示：今日的昼夜温差 -->
+                <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">温差: {int(temp_max - temp_min)}°C</span>
             </div>
         </div>
         """
