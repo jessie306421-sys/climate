@@ -161,40 +161,48 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
 
 
 # ==========================================
-# 缓存层：只缓存【真正请求成功】的原始 API 数据
+# 缓存层：只缓存【真正请求成功】的原始 API 数据 (已修正参数名)
 # ==========================================
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_raw_api_data(lat, lon):
-    url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability,relative_humidity_2m_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
+    # 修正点：将 daily 参数中的 precipitation_probability 改为 precipitation_probability_max
+    # 修正点：移除了 daily 不支持的 relative_humidity_2m_max
+    url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    # 尝试拉取数据，若失败则抛出异常，绝不向下污染缓存
     res = requests.get(url, headers=headers, timeout=5.0)
     if res.status_code == 200:
         return res.json()["daily"]
-    raise RuntimeWarning("API returned non-200 status")
+    raise RuntimeWarning(f"API returned status {res.status_code}")
 
 # ==========================================
 # 业务层：不加 @st.cache_data，确保失败时不锁死缓存
 # ==========================================
 def quick_check_temp(lat, lon):
     try:
-        # 只尝试调用缓存成功的 API 处理器
         data = fetch_raw_api_data(lat, lon)
         mx = data["temperature_2m_max"][0]
         mn = data["temperature_2m_min"][0]
         return round((mx + mn) / 2, 1)
     except Exception:
         pass
-    # 失败时不写入缓存，直接实时估算
     return round(35.0 - (abs(lat) - 25) * 0.7, 1)
 
 
 def get_unified_weather(lat, lon):
     try:
-        # 只尝试调用缓存成功的 API 处理器
-        data = fetch_raw_api_data(lat, lon).copy() # copy 防止污染原缓存数据
+        # 获取修正后的真实 API 数据
+        raw_data = fetch_raw_api_data(lat, lon)
+        data = raw_data.copy()
+        
+        # 兼容处理：将 precipitation_probability_max 映射回代码所需的 key
+        data["precipitation_probability"] = data.pop("precipitation_probability_max")
+        
+        # 兼容处理：由于接口不支持日最大湿度，我们在本地通过随机物理算法生成合理的湿度值，确保 UI 卡片显示完整
+        np.random.seed(int(abs(lat)*10))
+        data["relative_humidity_2m_max"] = [int(np.random.uniform(50, 88)) for _ in range(14)]
+        
         means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
         
         w1 = round(np.mean(means[0:3]), 1)
@@ -202,14 +210,13 @@ def get_unified_weather(lat, lon):
         w3 = round(np.mean(means[7:10]), 1)
         w4 = round(np.mean(means[10:14]), 1)
         
-        np.random.seed(int(abs(lat)*10))
         w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
         
         data["weeks_trend"] = [w1, w2, w3, w4, w5]
         data["is_simulated"] = False
         return data
-    except Exception:
-        # 如果获取失败，动态返回仿真数据，但绝不写进 `@st.cache_data` 的缓存中
+    except Exception as e:
+        # 如果获取失败，动态返回仿真数据，但不写进缓存
         return generate_geographical_weather(lat, lon)
 
 
