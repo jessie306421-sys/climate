@@ -126,7 +126,7 @@ temp_threshold = st.sidebar.slider(
     min_value=10.0, max_value=25.0, value=16.0, step=0.5
 )
 
-# 物理学降级仿真算法 (支持14天)
+# 物理学降级仿真算法 (已彻底移除湿度和风速)
 def generate_geographical_weather(lat, lon, seed_offset=0.0):
     base_temp = 35.0 - (abs(lat) - 25) * 0.7 + seed_offset
     base_temp = max(5.0, min(36.0, base_temp))
@@ -137,8 +137,6 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
     max_temps = [round(base_temp + np.random.uniform(2, 6), 1) for _ in range(14)]
     min_temps = [round(base_temp - np.random.uniform(4, 8), 1) for _ in range(14)]
     precip = [int(np.random.uniform(5, 75)) for _ in range(14)]
-    humidity = [int(np.random.uniform(45, 85)) for _ in range(14)]
-    wind = [int(np.random.uniform(6, 20)) for _ in range(14)]
     weather_codes = [int(np.random.choice([0, 1, 2, 3, 61])) for _ in range(14)]
     
     # 模拟5周趋势
@@ -153,8 +151,6 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
         "temperature_2m_max": max_temps,
         "temperature_2m_min": min_temps,
         "precipitation_probability": precip,
-        "relative_humidity_2m_max": humidity,
-        "wind_speed_10m_max": wind,
         "weather_code": weather_codes,
         "weeks_trend": trend_vals,
         "is_simulated": True
@@ -192,7 +188,6 @@ def quick_check_temp(lat, lon):
 def get_unified_weather(lat, lon):
     try:
         raw_data = fetch_raw_api_data(lat, lon)
-        # 使用 deepcopy 复制完整数据，防止意外修改缓存数据导致错乱
         data = copy.deepcopy(raw_data)
         
         data["precipitation_probability"] = data.pop("precipitation_probability_max")
@@ -214,7 +209,7 @@ def get_unified_weather(lat, lon):
 
 
 # ==========================================
-# 4. 一级筛选栏 (气象过滤中心 + 均改为单选冷暖)
+# 4. 一级筛选栏 (气象过滤中心)
 # ==========================================
 st.markdown("##### 🔍 气象过滤中心")
 filter_cols = st.columns(3)
@@ -266,7 +261,7 @@ else:
         st.warning("请至少选择一个代表州加载趋势图。")
         st.stop()
 
-# 渲染右侧 Metric 状态卡片并加载主区域天气
+# 渲染右侧 Metric 状态卡片
 if len(selected_states) == 1:
     state_lat = US_CAPITALS[selected_states[0]]["lat"]
     state_lon = US_CAPITALS[selected_states[0]]["lon"]
@@ -328,7 +323,7 @@ with col_btn_right:
 st.write("")
 
 # ==========================================
-# 6. 面板 A 渲染：天气预报
+# 6. 面板 A 渲染：天气预报 (此段已彻底清除湿度、风速依赖)
 # ==========================================
 if st.session_state.active_panel == "天气预报":
     target_state = selected_states[0]
@@ -362,11 +357,15 @@ if st.session_state.active_panel == "天气预报":
         temp_max = active_weather_main["temperature_2m_max"][i]
         temp_min = active_weather_main["temperature_2m_min"][i]
         precip = active_weather_main["precipitation_probability"][i]
-        humidity = active_weather_main["relative_humidity_2m_max"][i]
-        wind = active_weather_main["wind_speed_10m_max"][i]
         
+        # 统一执行四舍五入并严格对齐差值逻辑，保证界面数学展示一致性
+        disp_max = int(round(temp_max))
+        disp_min = int(round(temp_min))
+        disp_diff = disp_max - disp_min
+
         card_class = "weather-card weather-card-today" if i == 0 else "weather-card"
         
+        # 移除原先 💧 最大湿度 和 💨 最大风速 的 HTML 显示结构
         card_html = f"""
         <div class="{card_class}">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -377,15 +376,13 @@ if st.session_state.active_panel == "天气预报":
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
                 <span style="font-size: 58px; line-height: 1;">{cond_emoji}</span>
-                <div style="font-size: 12px; color: #475569; text-align: right; line-height: 1.5; font-weight: 500;">
-                    🌧️ 降水概率: {precip}%<br>
-                    💧 最大湿度: {humidity}%<br>
-                    💨 最大风速: {wind}km/h
+                <div style="font-size: 13px; color: #475569; text-align: right; line-height: 1.5; font-weight: 500;">
+                    🌧️ 降水概率: {precip}%
                 </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px;">
-                <span style="font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1;">{int(temp_min)}° - {int(temp_max)}°</span>
-                <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">温差: {int(temp_max - temp_min)}°C</span>
+                <span style="font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1;">{disp_min}° - {disp_max}°</span>
+                <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">温差: {disp_diff}°C</span>
             </div>
         </div>
         """
@@ -443,27 +440,25 @@ elif st.session_state.active_panel == "天气趋势":
         averaged_trend.append(round(np.mean(points_sum), 1))
 
     # ==========================================
-    # 趋势折线图绘制与冷暖区高亮背景
+    # 趋势折线图绘制与坐标轴范围配置
     # ==========================================
     fig = go.Figure()
     
     num_selected = len(selected_states)
     
-    # 根据需求：当多选城市数量小于等于5时，渲染各城市的温度趋势实线并显示小圆点
     if num_selected <= 5:
         for s in selected_states:
             fig.add_trace(go.Scatter(
                 x=x_timeline, 
                 y=y_data_per_state[s],
-                mode='lines+markers',                 # 实线 + 节点小圆点
+                mode='lines+markers',                 
                 name=f"{s} 趋势",
-                line=dict(width=2),                  # 未指定颜色，由 Plotly 调色盘自动分配不同颜色
-                marker=dict(size=6, symbol='circle'), # 节点标记为小圆点
-                hoverinfo='all'                       # 鼠标悬停时才在对应位置显示具体温度数字
+                line=dict(width=2),                  
+                marker=dict(size=6, symbol='circle'), 
+                hoverinfo='all'                       
             ))
-    # 当大于5个时，不进行上方的 Trace 绘制，只显示下方的主均值曲线
 
-    # 确定折线颜色 (选择冷区强制蓝，选择暖区强制红)
+    # 确定平均线色彩
     if "冷区" in selected_zone_filter:
         main_color = '#3B82F6' 
     elif "暖区" in selected_zone_filter:
@@ -471,7 +466,7 @@ elif st.session_state.active_panel == "天气趋势":
     else:
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
-    # 绘制平均趋势主线 (使用虚线表示，非悬停状态显示数值)
+    # 绘制平均趋势主虚线
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
@@ -483,7 +478,7 @@ elif st.session_state.active_panel == "天气趋势":
         textfont=dict(size=11, color="#0F172A")
     ))
 
-    # 添加决策阈值参考线
+    # 判定阈值线
     fig.add_hline(
         y=temp_threshold, 
         line_width=1.5, 
@@ -493,7 +488,6 @@ elif st.session_state.active_panel == "天气趋势":
         annotation_position="bottom right"
     )
 
-    # 布局配置，将竖坐标轴温度范围限制为 0 到 40
     fig.update_layout(
         plot_bgcolor='#FFFFFF',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -503,7 +497,7 @@ elif st.session_state.active_panel == "天气趋势":
             showgrid=True, 
             gridcolor='#F1F5F9', 
             ticksuffix="°C", 
-            range=[0, 40]  # 固定 Y 轴温度范围为 0°C ~ 40°C
+            range=[0, 40]  
         ),
         legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
         margin=dict(l=40, r=40, t=20, b=40),
