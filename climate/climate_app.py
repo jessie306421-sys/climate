@@ -11,7 +11,7 @@ from collections import defaultdict
 # 1. 页面基本配置与高级 UI 样式注入 (CSS)
 # ==========================================
 st.set_page_config(
-    page_title="美国气候分析系统",
+    page_title="美国气候 analysis",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -217,7 +217,6 @@ def fetch_nws_raw_data(lat, lon):
     headers = {
         "User-Agent": "(MyClimateAnalysisSystem, contact@myclimateapp.com)"
     }
-    # NWS 第一步：通过经纬度匹配网格点
     points_url = f"https://api.weather.gov/points/{lat},{lon}"
     res_points = requests.get(points_url, headers=headers, timeout=5.0)
     if res_points.status_code != 200:
@@ -225,7 +224,6 @@ def fetch_nws_raw_data(lat, lon):
     
     forecast_url = res_points.json()["properties"]["forecast"]
     
-    # NWS 第二步：通过网格点请求官方高精预报
     res_forecast = requests.get(forecast_url, headers=headers, timeout=5.0)
     if res_forecast.status_code == 200:
         return res_forecast.json()["properties"]["periods"]
@@ -236,12 +234,10 @@ def get_nws_forecast(lat, lon):
     try:
         periods = fetch_nws_raw_data(lat, lon)
         
-        # 针对 NWS 12小时半日预报进行按日期聚合与华氏度转换
         daily_aggregation = defaultdict(list)
         for period in periods:
-            date_str = period["startTime"][:10]  # 提取 YYYY-MM-DD
+            date_str = period["startTime"][:10]  
             
-            # F 转换为 C
             temp_f = period["temperature"]
             temp_c = (temp_f - 32) * 5.0 / 9.0 if period.get("temperatureUnit") == "F" else temp_f
             
@@ -254,7 +250,6 @@ def get_nws_forecast(lat, lon):
                 "short_forecast": short_forecast
             })
             
-        # 构建统一的天气模型结构，保证卡片无缝渲染
         dates = sorted(list(daily_aggregation.keys()))[:7]
         max_temps = []
         min_temps = []
@@ -270,7 +265,6 @@ def get_nws_forecast(lat, lon):
             max_temps.append(max(temps))
             min_temps.append(min(temps))
             precips.append(max(pops))
-            # 优先选择白天的天气描述作为主显示描述
             forecasts_text.append(txts[0])
             
         return {
@@ -283,7 +277,6 @@ def get_nws_forecast(lat, lon):
             "data_source": "NWS (US Government Official)"
         }
     except Exception:
-        # 如果超出美国本土网格（例如海外飞地）或连接超时，自动向下兼容至仿真模型
         sim = generate_geographical_weather(lat, lon)
         sim["forecast_text"] = ["多云" for _ in range(14)]
         return sim
@@ -365,12 +358,11 @@ else:
         st.warning("请至少选择一个代表州加载趋势图。")
         st.stop()
 
-# 加载数据源指示
+# 重点重构区：安全划分单州/多州数据提取，彻底消除 NameError 风险
 if len(selected_states) == 1:
     state_lat = US_CAPITALS[selected_states[0]]["lat"]
     state_lon = US_CAPITALS[selected_states[0]]["lon"]
     
-    # 动态指示：天气预报模式拉取高精NWS，天气趋势模式拉取Open-Meteo
     if st.session_state.active_panel == "天气预报":
         active_weather_main = get_nws_forecast(state_lat, state_lon)
     else:
@@ -386,6 +378,10 @@ if len(selected_states) == 1:
             value=f"{zone_emoji} {state_zone}", 
             delta=f"今日均温: {state_calc_temp}°C"
         )
+    
+    # 单城市数据源信息
+    source_label = active_weather_main.get("data_source", "Unknown")
+    is_simulated = active_weather_main.get("is_simulated", False)
 else:
     temps = []
     simulated_flags = []
@@ -406,11 +402,14 @@ else:
             value=f"已选 {len(selected_states)} 个地区",
             delta=f"组合平均温度: {avg_temp}°C"
         )
+    
+    # 多城市数据源信息 (趋势图默认使用 Open-Meteo)
+    source_label = "Open-Meteo API"
+    is_simulated = any(simulated_flags)
 
 # 指示信息提示
-source_label = active_weather_main.get("data_source", "Unknown") if len(selected_states) == 1 else "Open-Meteo API"
-if active_weather_main.get("is_simulated", False):
-    st.warning(f"⚠️ 提示：连接超时，系统已自动降级至本地仿真引擎呈现页面。")
+if is_simulated:
+    st.warning(f"⚠️ 提示：连接超时，部分或全部选定地区已自动降级至本地地理仿真引擎。")
 else:
     st.success(f"✅ 双通道连接正常：成功通过 [{source_label}] 载入当前气象预测数据。")
 
@@ -442,13 +441,11 @@ if st.session_state.active_panel == "天气预报":
     
     cols_grid = st.columns(2)
     
-    # 针对 NWS 原生描述和 Open-Meteo 备用描述的降级适配器
     def get_weather_desc_and_emoji(index, raw_data):
         if "forecast_text" in raw_data:
             txt = raw_data["forecast_text"][index]
             return txt, get_nws_emoji(txt)
         else:
-            # 兼容仿真模式
             mapping = {
                 0: ("晴朗", "☀️"), 1: ("晴间多云", "🌤️"), 2: ("多云", "⛅"), 3: ("阴天", "☁️"), 
                 61: ("小雨", "🌧️")
@@ -456,7 +453,6 @@ if st.session_state.active_panel == "天气预报":
             code = raw_data["weather_code"][index]
             return mapping.get(code, ("多云", "⛅"))
 
-    # NWS 最多返回 7 天高精预报
     display_days = min(7, len(active_weather_main["time"]))
     for i in range(display_days):
         col_idx = i % 2
@@ -476,7 +472,6 @@ if st.session_state.active_panel == "天气预报":
         temp_min = active_weather_main["temperature_2m_min"][i]
         precip = active_weather_main["precipitation_probability"][i]
         
-        # 统一四舍五入并严格对齐差值逻辑
         disp_max = int(round(temp_max))
         disp_min = int(round(temp_min))
         disp_diff = disp_max - disp_min
@@ -584,7 +579,7 @@ elif st.session_state.active_panel == "天气趋势":
     else:
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
-    # 绘制平均趋势主线
+    # 绘制平均趋势主虚线
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
