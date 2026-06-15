@@ -5,6 +5,7 @@ import requests
 import datetime
 import plotly.graph_objects as go
 import copy
+from collections import defaultdict
 
 # ==========================================
 # 1. 页面基本配置与高级 UI 样式注入 (CSS)
@@ -110,10 +111,10 @@ st.markdown("""
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
             <span class="system-title">🌍 美国气候 analysis</span>
-            <p class="system-subtitle">US 50 States Coverage • Cascading Decision Network • 全美50州覆盖 • 级联决策总网</p>
+            <p class="system-subtitle">NWS 7-Day High-Precision & Open-Meteo Multi-Model Hybrid Engine • 级联双网气候决策系统</p>
         </div>
         <div style="display: flex; gap: 6px;">
-            <span class="badge-tag" style="background-color: #EFF6FF; color: #1E40AF;">📅 实时更新</span>
+            <span class="badge-tag" style="background-color: #EFF6FF; color: #1E40AF;">📅 实时双通道更新</span>
         </div>
     </div>
 </div>
@@ -126,7 +127,10 @@ temp_threshold = st.sidebar.slider(
     min_value=10.0, max_value=25.0, value=16.0, step=0.5
 )
 
-# 物理学降级仿真算法 (已彻底移除湿度和风速)
+
+# ==========================================
+# 4. 数据仿真备用层（移除湿度、风速依赖）
+# ==========================================
 def generate_geographical_weather(lat, lon, seed_offset=0.0):
     base_temp = 35.0 - (abs(lat) - 25) * 0.7 + seed_offset
     base_temp = max(5.0, min(36.0, base_temp))
@@ -139,7 +143,6 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
     precip = [int(np.random.uniform(5, 75)) for _ in range(14)]
     weather_codes = [int(np.random.choice([0, 1, 2, 3, 61])) for _ in range(14)]
     
-    # 模拟5周趋势
     trend_vals = []
     current_val = base_temp
     for _ in range(5):
@@ -153,12 +156,13 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
         "precipitation_probability": precip,
         "weather_code": weather_codes,
         "weeks_trend": trend_vals,
-        "is_simulated": True
+        "is_simulated": True,
+        "data_source": "Geographical Simulator"
     }
 
 
 # ==========================================
-# 缓存层：升级为 HTTPS，避免云端安全策略拦截
+# 5. 双引擎数据源之一：Open-Meteo (中长期趋势，HTTPS安全模式)
 # ==========================================
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_raw_api_data(lat, lon):
@@ -171,9 +175,29 @@ def fetch_raw_api_data(lat, lon):
         return res.json()["daily"]
     raise RuntimeWarning(f"API returned status {res.status_code}")
 
-# ==========================================
-# 业务层：引入 deepcopy 彻底避免 Streamlit 缓存污染
-# ==========================================
+
+def get_unified_weather(lat, lon):
+    try:
+        raw_data = fetch_raw_api_data(lat, lon)
+        data = copy.deepcopy(raw_data)
+        data["precipitation_probability"] = data.pop("precipitation_probability_max")
+        
+        means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
+        
+        w1 = round(np.mean(means[0:3]), 1)
+        w2 = round(np.mean(means[3:7]), 1)
+        w3 = round(np.mean(means[7:10]), 1)
+        w4 = round(np.mean(means[10:14]), 1)
+        w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
+        
+        data["weeks_trend"] = [w1, w2, w3, w4, w5]
+        data["is_simulated"] = False
+        data["data_source"] = "Open-Meteo API"
+        return data
+    except Exception:
+        return generate_geographical_weather(lat, lon)
+
+
 def quick_check_temp(lat, lon):
     try:
         data = fetch_raw_api_data(lat, lon)
@@ -185,31 +209,111 @@ def quick_check_temp(lat, lon):
     return round(35.0 - (abs(lat) - 25) * 0.7, 1)
 
 
-def get_unified_weather(lat, lon):
+# ==========================================
+# 6. 双引擎数据源之二：NWS (美国国家气象局官方高精 7 日预报通道)
+# ==========================================
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_nws_raw_data(lat, lon):
+    headers = {
+        "User-Agent": "(MyClimateAnalysisSystem, contact@myclimateapp.com)"
+    }
+    # NWS 第一步：通过经纬度匹配网格点
+    points_url = f"https://api.weather.gov/points/{lat},{lon}"
+    res_points = requests.get(points_url, headers=headers, timeout=5.0)
+    if res_points.status_code != 200:
+        raise RuntimeWarning("NWS grid points matching failed")
+    
+    forecast_url = res_points.json()["properties"]["forecast"]
+    
+    # NWS 第二步：通过网格点请求官方高精预报
+    res_forecast = requests.get(forecast_url, headers=headers, timeout=5.0)
+    if res_forecast.status_code == 200:
+        return res_forecast.json()["properties"]["periods"]
+    raise RuntimeWarning("NWS forecast parsing failed")
+
+
+def get_nws_forecast(lat, lon):
     try:
-        raw_data = fetch_raw_api_data(lat, lon)
-        data = copy.deepcopy(raw_data)
+        periods = fetch_nws_raw_data(lat, lon)
         
-        data["precipitation_probability"] = data.pop("precipitation_probability_max")
+        # 针对 NWS 12小时半日预报进行按日期聚合与华氏度转换
+        daily_aggregation = defaultdict(list)
+        for period in periods:
+            date_str = period["startTime"][:10]  # 提取 YYYY-MM-DD
+            
+            # F 转换为 C
+            temp_f = period["temperature"]
+            temp_c = (temp_f - 32) * 5.0 / 9.0 if period.get("temperatureUnit") == "F" else temp_f
+            
+            pop = period.get("probabilityOfPrecipitation", {}).get("value") or 0
+            short_forecast = period.get("shortForecast", "Unknown")
+            
+            daily_aggregation[date_str].append({
+                "temp": temp_c,
+                "pop": pop,
+                "short_forecast": short_forecast
+            })
+            
+        # 构建统一的天气模型结构，保证卡片无缝渲染
+        dates = sorted(list(daily_aggregation.keys()))[:7]
+        max_temps = []
+        min_temps = []
+        precips = []
+        forecasts_text = []
         
-        means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
-        
-        w1 = round(np.mean(means[0:3]), 1)
-        w2 = round(np.mean(means[3:7]), 1)
-        w3 = round(np.mean(means[7:10]), 1)
-        w4 = round(np.mean(means[10:14]), 1)
-        
-        w5 = round(w4 + np.random.uniform(-1.5, 1.5), 1)
-        
-        data["weeks_trend"] = [w1, w2, w3, w4, w5]
-        data["is_simulated"] = False
-        return data
-    except Exception as e:
-        return generate_geographical_weather(lat, lon)
+        for d in dates:
+            day_records = daily_aggregation[d]
+            temps = [r["temp"] for r in day_records]
+            pops = [r["pop"] for r in day_records]
+            txts = [r["short_forecast"] for r in day_records]
+            
+            max_temps.append(max(temps))
+            min_temps.append(min(temps))
+            precips.append(max(pops))
+            # 优先选择白天的天气描述作为主显示描述
+            forecasts_text.append(txts[0])
+            
+        return {
+            "time": dates,
+            "temperature_2m_max": max_temps,
+            "temperature_2m_min": min_temps,
+            "precipitation_probability": precips,
+            "forecast_text": forecasts_text,
+            "is_simulated": False,
+            "data_source": "NWS (US Government Official)"
+        }
+    except Exception:
+        # 如果超出美国本土网格（例如海外飞地）或连接超时，自动向下兼容至仿真模型
+        sim = generate_geographical_weather(lat, lon)
+        sim["forecast_text"] = ["多云" for _ in range(14)]
+        return sim
+
+
+def get_nws_emoji(text):
+    text_lower = text.lower()
+    if "sunny" in text_lower or "clear" in text_lower:
+        return "☀️"
+    elif "mostly sunny" in text_lower or "partly cloudy" in text_lower or "partly sunny" in text_lower:
+        return "🌤️"
+    elif "mostly cloudy" in text_lower:
+        return "⛅"
+    elif "cloudy" in text_lower or "overcast" in text_lower:
+        return "☁️"
+    elif "fog" in text_lower or "mist" in text_lower:
+        return "🌫️"
+    elif "drizzle" in text_lower or "sprinkle" in text_lower:
+        return "🌧️"
+    elif "rain" in text_lower or "shower" in text_lower:
+        return "🌧️"
+    elif "snow" in text_lower or "sleet" in text_lower or "ice" in text_lower or "flurry" in text_lower:
+        return "❄️"
+    elif "thunderstorm" in text_lower or "tstorm" in text_lower:
+        return "⛈️"
+    return "⛅"
 
 
 # ==========================================
-# 4. 一级筛选栏 (气象过滤中心)
+# 7. 级联气象过滤中心
 # ==========================================
 st.markdown("##### 🔍 气象过滤中心")
 filter_cols = st.columns(3)
@@ -261,13 +365,18 @@ else:
         st.warning("请至少选择一个代表州加载趋势图。")
         st.stop()
 
-# 渲染右侧 Metric 状态卡片
+# 加载数据源指示
 if len(selected_states) == 1:
     state_lat = US_CAPITALS[selected_states[0]]["lat"]
     state_lon = US_CAPITALS[selected_states[0]]["lon"]
-    active_weather_main = get_unified_weather(state_lat, state_lon)
-    state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
     
+    # 动态指示：天气预报模式拉取高精NWS，天气趋势模式拉取Open-Meteo
+    if st.session_state.active_panel == "天气预报":
+        active_weather_main = get_nws_forecast(state_lat, state_lon)
+    else:
+        active_weather_main = get_unified_weather(state_lat, state_lon)
+        
+    state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
     state_zone = "冷区 (Cold)" if state_calc_temp < temp_threshold else "暖区 (Warm)"
     zone_emoji = "❄️" if "冷" in state_zone else "☀️"
     
@@ -298,16 +407,17 @@ else:
             delta=f"组合平均温度: {avg_temp}°C"
         )
 
-any_simulated = active_weather_main.get("is_simulated", False) if len(selected_states) == 1 else any(simulated_flags)
-if any_simulated:
-    st.warning("⚠️ 提示：部分或全部选定地区连接超时，已使用备用气候模拟数据。")
+# 指示信息提示
+source_label = active_weather_main.get("data_source", "Unknown") if len(selected_states) == 1 else "Open-Meteo API"
+if active_weather_main.get("is_simulated", False):
+    st.warning(f"⚠️ 提示：连接超时，系统已自动降级至本地仿真引擎呈现页面。")
 else:
-    st.success("✅ 数据连接正常：已成功载入实时气象数据。")
+    st.success(f"✅ 双通道连接正常：成功通过 [{source_label}] 载入当前气象预测数据。")
 
 st.write("---")
 
 # ==========================================
-# 5. 双导航控制大按钮 (Tab Switcher)
+# 8. 双导航控制大按钮 (Tab Switcher)
 # ==========================================
 col_btn_left, col_btn_right = st.columns(2)
 with col_btn_left:
@@ -322,25 +432,33 @@ with col_btn_right:
 
 st.write("")
 
+
 # ==========================================
-# 6. 面板 A 渲染：天气预报 (此段已彻底清除湿度、风速依赖)
+# 9. 面板 A 渲染：天气预报 (NWS高精准7天引擎)
 # ==========================================
 if st.session_state.active_panel == "天气预报":
     target_state = selected_states[0]
-    st.subheader(f"📅 {target_state} • 7日高精预报")
+    st.subheader(f"📅 {target_state} • 7日高精预报 (基于NWS)")
     
     cols_grid = st.columns(2)
     
-    def get_wmo_info(code):
-        mapping = {
-            0: ("晴朗", "☀️"), 1: ("晴间多云", "🌤️"), 2: ("多云", "⛅"), 3: ("阴天", "☁️"), 
-            45: ("有雾", "🌫️"), 48: ("沉积雾", "🌫️"), 51: ("毛毛雨", "🌧️"), 61: ("小雨", "🌧️"), 
-            63: ("中雨", "🌧️"), 65: ("大雨", "🌧️"), 71: ("小雪", "❄️"), 73: ("中雪", "❄️"), 
-            75: ("大雪", "❄️"), 80: ("阵雨", "🌦️"), 95: ("雷阵雨", "⛈️")
-        }
-        return mapping.get(code, ("多云", "⛅"))
+    # 针对 NWS 原生描述和 Open-Meteo 备用描述的降级适配器
+    def get_weather_desc_and_emoji(index, raw_data):
+        if "forecast_text" in raw_data:
+            txt = raw_data["forecast_text"][index]
+            return txt, get_nws_emoji(txt)
+        else:
+            # 兼容仿真模式
+            mapping = {
+                0: ("晴朗", "☀️"), 1: ("晴间多云", "🌤️"), 2: ("多云", "⛅"), 3: ("阴天", "☁️"), 
+                61: ("小雨", "🌧️")
+            }
+            code = raw_data["weather_code"][index]
+            return mapping.get(code, ("多云", "⛅"))
 
-    for i in range(7):
+    # NWS 最多返回 7 天高精预报
+    display_days = min(7, len(active_weather_main["time"]))
+    for i in range(display_days):
         col_idx = i % 2
         date_str = active_weather_main["time"][i]
         date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
@@ -353,19 +471,18 @@ if st.session_state.active_panel == "天气预报":
         
         if i == 0: day_label_zh = "今天"
             
-        cond_text, cond_emoji = get_wmo_info(active_weather_main["weather_code"][i])
+        cond_text, cond_emoji = get_weather_desc_and_emoji(i, active_weather_main)
         temp_max = active_weather_main["temperature_2m_max"][i]
         temp_min = active_weather_main["temperature_2m_min"][i]
         precip = active_weather_main["precipitation_probability"][i]
         
-        # 统一执行四舍五入并严格对齐差值逻辑，保证界面数学展示一致性
+        # 统一四舍五入并严格对齐差值逻辑
         disp_max = int(round(temp_max))
         disp_min = int(round(temp_min))
         disp_diff = disp_max - disp_min
 
         card_class = "weather-card weather-card-today" if i == 0 else "weather-card"
         
-        # 移除原先 💧 最大湿度 和 💨 最大风速 的 HTML 显示结构
         card_html = f"""
         <div class="{card_class}">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -389,11 +506,12 @@ if st.session_state.active_panel == "天气预报":
         with cols_grid[col_idx]:
             st.markdown(card_html, unsafe_allow_html=True)
 
+
 # ==========================================
-# 7. 面板 B 渲染：天气趋势 (多选平均值趋势对比)
+# 10. 面板 B 渲染：天气趋势 (Open-Meteo 多选趋势对比)
 # ==========================================
 elif st.session_state.active_panel == "天气趋势":
-    st.subheader("📈 美国多区气候 • 中期趋势")
+    st.subheader("📈 美国多区气候 • 中期趋势 (基于Open-Meteo)")
     
     forecast_span = st.selectbox(
         "选择预测跨度 (Forecast Range):",
@@ -458,7 +576,7 @@ elif st.session_state.active_panel == "天气趋势":
                 hoverinfo='all'                       
             ))
 
-    # 确定平均线色彩
+    # 确定平均线颜色
     if "冷区" in selected_zone_filter:
         main_color = '#3B82F6' 
     elif "暖区" in selected_zone_filter:
@@ -466,7 +584,7 @@ elif st.session_state.active_panel == "天气趋势":
     else:
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
-    # 绘制平均趋势主虚线
+    # 绘制平均趋势主线
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
@@ -507,7 +625,7 @@ elif st.session_state.active_panel == "天气趋势":
     st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 8. 智能气候分析结论卡
+    # 智能气候分析结论卡
     # ==========================================
     st.write("---")
     
