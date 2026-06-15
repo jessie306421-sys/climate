@@ -86,7 +86,7 @@ US_CAPITALS = {
     "North Carolina (Raleigh)": {"lat": 35.779, "lon": -78.638, "region": "南大西洋/东南部"},
     "North Dakota (Bismarck)": {"lat": 46.808, "lon": -100.783, "region": "西北中部"},
     "Ohio (Columbus)": {"lat": 39.961, "lon": -82.998, "region": "东北中部"},
-    "Oklahoma (Oklahoma City)": {"lat": 35.467, "lon": -97.516, "region": "南中央"},
+    "Oklahoma (Oklahoma)": {"lat": 35.467, "lon": -97.516, "region": "南中央"},
     "Oregon (Salem)": {"lat": 44.942, "lon": -123.035, "region": "太平洋"},
     "Pennsylvania (Harrisburg)": {"lat": 40.273, "lon": -76.886, "region": "中大西洋"},
     "Rhode Island (Providence)": {"lat": 41.824, "lon": -71.412, "region": "新英格兰"},
@@ -330,6 +330,38 @@ with filter_cols[0]:
         key="zone_filter_selectbox"
     )
 
+# 动态 CSS：根据冷暖区选择，自动使右侧 multiselect 标签变蓝/红
+if "冷区" in selected_zone_filter:
+    st.markdown("""
+    <style>
+        div[data-baseweb="tag"], span[data-baseweb="tag"] {
+            background-color: #2563EB !important; /* 经典深蓝色 */
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="tag"] span, span[data-baseweb="tag"] span {
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="tag"] svg, span[data-baseweb="tag"] svg {
+            fill: #FFFFFF !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+elif "暖区" in selected_zone_filter:
+    st.markdown("""
+    <style>
+        div[data-baseweb="tag"], span[data-baseweb="tag"] {
+            background-color: #EF4444 !important; /* 珊瑚红 */
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="tag"] span, span[data-baseweb="tag"] span {
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="tag"] svg, span[data-baseweb="tag"] svg {
+            fill: #FFFFFF !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
 if "冷区" in selected_zone_filter:
     states_options = sorted(cold_states_list)
 elif "暖区" in selected_zone_filter:
@@ -358,7 +390,7 @@ else:
         st.warning("请至少选择一个代表州加载趋势图。")
         st.stop()
 
-# 重点重构区：安全划分单州/多州数据提取，彻底消除 NameError 风险
+# 安全划分单州/多州数据提取
 if len(selected_states) == 1:
     state_lat = US_CAPITALS[selected_states[0]]["lat"]
     state_lon = US_CAPITALS[selected_states[0]]["lon"]
@@ -379,7 +411,6 @@ if len(selected_states) == 1:
             delta=f"今日均温: {state_calc_temp}°C"
         )
     
-    # 单城市数据源信息
     source_label = active_weather_main.get("data_source", "Unknown")
     is_simulated = active_weather_main.get("is_simulated", False)
 else:
@@ -403,7 +434,6 @@ else:
             delta=f"组合平均温度: {avg_temp}°C"
         )
     
-    # 多城市数据源信息 (趋势图默认使用 Open-Meteo)
     source_label = "Open-Meteo API"
     is_simulated = any(simulated_flags)
 
