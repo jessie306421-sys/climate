@@ -165,8 +165,6 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
 # ==========================================
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_raw_api_data(lat, lon):
-    # 修正点：将 daily 参数中的 precipitation_probability 改为 precipitation_probability_max
-    # 修正点：移除了 daily 不支持的 relative_humidity_2m_max
     url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -192,14 +190,11 @@ def quick_check_temp(lat, lon):
 
 def get_unified_weather(lat, lon):
     try:
-        # 获取修正后的真实 API 数据
         raw_data = fetch_raw_api_data(lat, lon)
         data = raw_data.copy()
         
-        # 兼容处理：将 precipitation_probability_max 映射回代码所需的 key
         data["precipitation_probability"] = data.pop("precipitation_probability_max")
         
-        # 兼容处理：由于接口不支持日最大湿度，我们在本地通过随机物理算法生成合理的湿度值，确保 UI 卡片显示完整
         np.random.seed(int(abs(lat)*10))
         data["relative_humidity_2m_max"] = [int(np.random.uniform(50, 88)) for _ in range(14)]
         
@@ -216,7 +211,6 @@ def get_unified_weather(lat, lon):
         data["is_simulated"] = False
         return data
     except Exception as e:
-        # 如果获取失败，动态返回仿真数据，但不写进缓存
         return generate_geographical_weather(lat, lon)
 
 
@@ -229,7 +223,6 @@ filter_cols = st.columns(3)
 if "active_panel" not in st.session_state:
     st.session_state.active_panel = "天气预报"
 
-# 预计算冷暖州列表
 cold_states_list = []
 warm_states_list = []
 for state, coords in US_CAPITALS.items():
@@ -239,7 +232,6 @@ for state, coords in US_CAPITALS.items():
     else:
         warm_states_list.append(state)
 
-# 4.1 冷暖类型筛选 (统一变更为单选)
 with filter_cols[0]:
     selected_zone_filter = st.selectbox(
         "1. 冷暖类型筛选 (Climate Zone)", 
@@ -254,7 +246,6 @@ elif "暖区" in selected_zone_filter:
 else:
     states_options = sorted(list(US_CAPITALS.keys()))
 
-# 4.2 渲染代表州选择器 (根据页面支持多选或单选)
 if st.session_state.active_panel == "天气预报":
     with filter_cols[1]:
         selected_state = st.selectbox(
@@ -276,7 +267,7 @@ else:
         st.warning("请至少选择一个代表州加载趋势图。")
         st.stop()
 
-# 4.3 渲染右侧 Metric 状态卡片
+# 渲染右侧 Metric 状态卡片并加载主区域天气
 if len(selected_states) == 1:
     state_lat = US_CAPITALS[selected_states[0]]["lat"]
     state_lon = US_CAPITALS[selected_states[0]]["lon"]
@@ -313,7 +304,6 @@ else:
             delta=f"组合平均温度: {avg_temp}°C"
         )
 
-# 数据降级状态警告
 any_simulated = active_weather_main.get("is_simulated", False) if len(selected_states) == 1 else any(simulated_flags)
 if any_simulated:
     st.warning("⚠️ 提示：部分或全部选定地区连接超时，已使用备用气候模拟数据。")
@@ -395,9 +385,7 @@ if st.session_state.active_panel == "天气预报":
                 </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px;">
-                <!-- 左下角大字展示：最低温° - 最高温° -->
                 <span style="font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1;">{int(temp_min)}° - {int(temp_max)}°</span>
-                <!-- 右下角小字展示：今日的昼夜温差 -->
                 <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">温差: {int(temp_max - temp_min)}°C</span>
             </div>
         </div>
@@ -460,34 +448,38 @@ elif st.session_state.active_panel == "天气趋势":
     # ==========================================
     fig = go.Figure()
     
-    # 1. 单个州的参考细线
-    if len(selected_states) > 1:
+    num_selected = len(selected_states)
+    
+    # 根据需求：当多选城市数量小于等于5时，渲染各城市的温度趋势实线并显示小圆点
+    if num_selected <= 5:
         for s in selected_states:
             fig.add_trace(go.Scatter(
-                x=x_timeline, y=y_data_per_state[s],
-                mode='lines',
+                x=x_timeline, 
+                y=y_data_per_state[s],
+                mode='lines+markers',                 # 实线 + 节点小圆点
                 name=f"{s} 趋势",
-                line=dict(color='rgba(148, 163, 184, 0.35)', width=1.5),
-                hoverinfo='all' if len(selected_states) <= 6 else 'skip'
+                line=dict(width=2),                  # 未指定颜色，由 Plotly 调色盘自动分配不同颜色
+                marker=dict(size=6, symbol='circle'), # 节点标记为小圆点
+                hoverinfo='all'                       # 鼠标悬停时才在对应位置显示具体温度数字
             ))
+    # 当大于5个时，不进行上方的 Trace 绘制，只显示下方的主均值曲线
 
-    # 2. 确定折线颜色 (选择冷区强制蓝，选择暖区强制红)
+    # 确定折线颜色 (选择冷区强制蓝，选择暖区强制红)
     if "冷区" in selected_zone_filter:
-        main_color = '#3B82F6' # 经典蓝
+        main_color = '#3B82F6' 
     elif "暖区" in selected_zone_filter:
-        main_color = '#EF4444' # 珊瑚红
+        main_color = '#EF4444' 
     else:
-        # 全部模式下根据均值大小自动切换
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
-    # 3. 绘制平均趋势主线 (使用虚线 dash='dash'，移除 font.style 以避开 Plotly 报错)
+    # 绘制平均趋势主线 (使用虚线表示，非悬停状态显示数值)
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
         name="所选组合均值",
-        line=dict(color=main_color, width=4, dash='dash', shape='spline'), # 折线类型设置为虚线
+        line=dict(color=main_color, width=4, dash='dash', shape='spline'),
         marker=dict(size=9, symbol='circle', line=dict(color='#FFFFFF', width=1.5)),
-        text=[f"<b>{v}°</b>" for v in averaged_trend],  # 通过嵌入 HTML 标签加粗数值
+        text=[f"<b>{v}°</b>" for v in averaged_trend], 
         textposition="top center",
         textfont=dict(size=11, color="#0F172A")
     ))
@@ -502,11 +494,18 @@ elif st.session_state.active_panel == "天气趋势":
         annotation_position="bottom right"
     )
 
+    # 布局配置，将竖坐标轴温度范围限制为 0 到 40
     fig.update_layout(
         plot_bgcolor='#FFFFFF',
         paper_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
-        yaxis=dict(title=y_axis_title, showgrid=True, gridcolor='#F1F5F9', ticksuffix="°C", range=[min(averaged_trend)-4, max(averaged_trend)+4]),
+        yaxis=dict(
+            title=y_axis_title, 
+            showgrid=True, 
+            gridcolor='#F1F5F9', 
+            ticksuffix="°C", 
+            range=[0, 40]  # 固定 Y 轴温度范围为 0°C ~ 40°C
+        ),
         legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
         margin=dict(l=40, r=40, t=20, b=40),
         height=470
