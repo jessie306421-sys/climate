@@ -4,6 +4,7 @@ import numpy as np
 import requests
 import datetime
 import plotly.graph_objects as go
+import copy
 
 # ==========================================
 # 1. 页面基本配置与高级 UI 样式注入 (CSS)
@@ -161,11 +162,11 @@ def generate_geographical_weather(lat, lon, seed_offset=0.0):
 
 
 # ==========================================
-# 缓存层：只缓存【真正请求成功】的原始 API 数据 (已修正参数名)
+# 缓存层：升级为 HTTPS，避免云端安全策略拦截
 # ==========================================
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_raw_api_data(lat, lon):
-    url = f"http://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,weather_code&timezone=auto&forecast_days=14"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days=14"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -175,7 +176,7 @@ def fetch_raw_api_data(lat, lon):
     raise RuntimeWarning(f"API returned status {res.status_code}")
 
 # ==========================================
-# 业务层：不加 @st.cache_data，确保失败时不锁死缓存
+# 业务层：引入 deepcopy 彻底避免 Streamlit 缓存污染
 # ==========================================
 def quick_check_temp(lat, lon):
     try:
@@ -191,12 +192,10 @@ def quick_check_temp(lat, lon):
 def get_unified_weather(lat, lon):
     try:
         raw_data = fetch_raw_api_data(lat, lon)
-        data = raw_data.copy()
+        # 使用 deepcopy 复制完整数据，防止意外修改缓存数据导致错乱
+        data = copy.deepcopy(raw_data)
         
         data["precipitation_probability"] = data.pop("precipitation_probability_max")
-        
-        np.random.seed(int(abs(lat)*10))
-        data["relative_humidity_2m_max"] = [int(np.random.uniform(50, 88)) for _ in range(14)]
         
         means = [round((mx+mn)/2, 1) for mx, mn in zip(data["temperature_2m_max"], data["temperature_2m_min"])]
         
