@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import numpy as np
 import requests
@@ -589,7 +589,9 @@ elif st.session_state.active_panel == "天气趋势":
     
     num_selected = len(selected_states)
     
-    if num_selected <= 5:
+    # 修正点：将此处的 num_selected <= 5 修改为 1 < num_selected <= 5
+    # 保证只有一个城市时，不重复绘制单独城市的实线
+    if 1 < num_selected <= 5:
         for s in selected_states:
             fig.add_trace(go.Scatter(
                 x=x_timeline, 
@@ -610,10 +612,11 @@ elif st.session_state.active_panel == "天气趋势":
         main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
 
     # 绘制平均趋势主虚线
+    # 修正点：动态调整主线的 name 图例名称：单城市显示其城市名趋势，多城市显示“所选组合均值”
     fig.add_trace(go.Scatter(
         x=x_timeline, y=averaged_trend,
         mode='lines+markers+text',
-        name="所选组合均值",
+        name=f"{selected_states[0]} 趋势" if num_selected == 1 else "所选组合均值",
         line=dict(color=main_color, width=4, dash='dash', shape='spline'),
         marker=dict(size=9, symbol='circle', line=dict(color='#FFFFFF', width=1.5)),
         text=[f"<b>{v}°</b>" for v in averaged_trend], 
@@ -623,50 +626,4 @@ elif st.session_state.active_panel == "天气趋势":
 
     # 判定阈值线
     fig.add_hline(
-        y=temp_threshold, 
-        line_width=1.5, 
-        line_dash="dot", 
-        line_color="#64748B",
-        annotation_text=f"判定阈值 {temp_threshold}°C",
-        annotation_position="bottom right"
-    )
-
-    fig.update_layout(
-        plot_bgcolor='#FFFFFF',
-        paper_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
-        yaxis=dict(
-            title=y_axis_title, 
-            showgrid=True, 
-            gridcolor='#F1F5F9', 
-            ticksuffix="°C", 
-            range=[0, 40]  
-        ),
-        legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
-        margin=dict(l=40, r=40, t=20, b=40),
-        height=470
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ==========================================
-    # 智能气候分析结论卡
-    # ==========================================
-    st.write("---")
-    
-    trend_symbol = "↗ 逐步上升" if averaged_trend[-1] > averaged_trend[0] else ("↘ 逐步下降" if averaged_trend[-1] < averaged_trend[0] else "→ 基本平稳")
-    is_cold = np.mean(averaged_trend) < temp_threshold
-    rec_tags = "秋装服饰 / 防风外套 / 针织衫 / 卫衣" if is_cold else "夏季服饰 / 轻薄T恤 / 户外用品 / 防晒产品"
-    
-    analysis_html = f"""
-    <div class="analysis-card">
-        <h3 style="margin: 0 0 15px 0; color: #1E293B; font-size: 18px;">📊 气候分析结论 (基于所选地区 average 趋势)</h3>
-        <div style="line-height: 1.8; font-size: 14px; color: #475569;">
-            <p><strong>预测期内平均气温：</strong> 预计为 <strong>{round(np.mean(averaged_trend), 1)}°C</strong></p>
-            <p><strong>所选跨度温度走势：</strong> <span style="font-weight: bold; color: {'#EF4444' if '上升' in trend_symbol else '#3B82F6'};">{trend_symbol}</span></p>
-            <p><strong>综合气候分类评定：</strong> <span style="font-weight: bold; color: {'#3B82F6' if is_cold else '#F97316'};">{"冷区 (Cold Zone)" if is_cold else "暖区 (Warm Zone)"}</span></p>
-            <p><strong>供应链/陈列推荐关注：</strong> <span style="font-weight: bold; color: #0F766E;">{rec_tags}</span></p>
-        </div>
-    </div>
-    """
-    st.markdown(analysis_html, unsafe_allow_html=True)
+        y=temp_threshold,
