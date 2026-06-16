@@ -660,7 +660,7 @@ elif st.session_state.active_panel == "天气趋势":
     
     analysis_html = f"""
     <div class="analysis-card">
-        <h3 style="margin: 0 0 15px 0; color: #1E293B; font-size: 18px;">📊 气候分析结论 (基于所选地区平均值)</h3>
+        <h3 style="margin: 0 0 15px 0; color: #1E293B; font-size: 18px;">📊 气候分析结论 (基于所选地区 average 趋势)</h3>
         <div style="line-height: 1.8; font-size: 14px; color: #475569;">
             <p><strong>预测期内平均气温：</strong> 预计为 <strong>{round(np.mean(averaged_trend), 1)}°C</strong></p>
             <p><strong>所选跨度温度走势：</strong> <span style="font-weight: bold; color: {'#EF4444' if '上升' in trend_symbol else '#3B82F6'};">{trend_symbol}</span></p>
