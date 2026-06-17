@@ -536,7 +536,13 @@ if st.session_state.active_panel == "天气预报":
 # 10. 面板 B 渲染：天气趋势 (Open-Meteo 多选趋势对比)
 # ==========================================
 elif st.session_state.active_panel == "天气趋势":
-    st.subheader("📈 美国多区气候 • 中期趋势 (基于Open-Meteo)")
+    num_selected = len(selected_states)
+    
+    # 动态条件标题逻辑：单城市显示该城市名趋势，多城市显示“美国多区气候趋势”
+    if num_selected == 1:
+        st.subheader(f"📈 {selected_states[0]} • 中期趋势 (基于Open-Meteo)")
+    else:
+        st.subheader("📈 美国多区气候 • 中期趋势 (基于Open-Meteo)")
     
     forecast_span = st.selectbox(
         "选择预测跨度 (Forecast Range):",
@@ -586,8 +592,6 @@ elif st.session_state.active_panel == "天气趋势":
     # 趋势折线图绘制与坐标轴范围配置
     # ==========================================
     fig = go.Figure()
-    
-    num_selected = len(selected_states)
     
     # 保证只有一个城市时，不重复绘制单独城市的实线
     if 1 < num_selected <= 5:
