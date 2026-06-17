@@ -103,6 +103,10 @@ US_CAPITALS = {
     "Wyoming (Cheyenne)": {"lat": 41.140, "lon": -104.820, "region": "山地"}
 }
 
+# 跨页面统一选择状态源初始化
+if "current_selected_states" not in st.session_state:
+    st.session_state.current_selected_states = ["Alabama (Montgomery)"]
+
 # ==========================================
 # 3. 顶部信息卡 (优化标题)
 # ==========================================
@@ -369,26 +373,47 @@ elif "暖区" in selected_zone_filter:
 else:
     states_options = sorted(list(US_CAPITALS.keys()))
 
+# ==========================================
+# 联动机制重构：确保 Forecast 与 Trends 状态安全同步
+# ==========================================
 if st.session_state.active_panel == "天气预报":
+    # 规则 3：如果趋势页面多选了城市，切换到天气预报页面就恢复默认城市
+    if len(st.session_state.current_selected_states) > 1:
+        default_city = "Alabama (Montgomery)" if "Alabama (Montgomery)" in states_options else states_options[0]
+        st.session_state.current_selected_states = [default_city]
+        
+    current_single_state = st.session_state.current_selected_states[0]
+    if current_single_state not in states_options:
+        current_single_state = states_options[0]
+        st.session_state.current_selected_states = [current_single_state]
+        
     with filter_cols[1]:
         selected_state = st.selectbox(
             "2. 选择代表州 (State)", 
             options=states_options,
-            key="state_single"
+            index=states_options.index(current_single_state),
+            key="state_single_widget"
         )
+        st.session_state.current_selected_states = [selected_state]
     selected_states = [selected_state]
 else:
+    # 趋势多选页面逻辑
+    valid_stored_states = [s for s in st.session_state.current_selected_states if s in states_options]
+    if not valid_stored_states:
+        valid_stored_states = [states_options[0]]
+        st.session_state.current_selected_states = valid_stored_states
+        
     with filter_cols[1]:
-        default_selection = [states_options[0], states_options[1]] if len(states_options) >= 2 else states_options
         selected_states = st.multiselect(
             "2. 选择代表州 (State) - 可多选",
             options=states_options,
-            default=default_selection,
-            key="state_multi"
+            default=valid_stored_states,
+            key="state_multi_widget"
         )
-    if not selected_states:
-        st.warning("请至少选择一个代表州加载趋势图。")
-        st.stop()
+        if not selected_states:
+            st.warning("请至少选择一个代表州加载趋势图。")
+            st.stop()
+        st.session_state.current_selected_states = selected_states
 
 # 安全划分单州/多州数据提取
 if len(selected_states) == 1:
