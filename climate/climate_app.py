@@ -320,10 +320,30 @@ if "active_panel" not in st.session_state:
 
 cold_states_list = []
 warm_states_list = []
+
 for state, coords in US_CAPITALS.items():
-    t_check = quick_check_temp(coords["lat"], coords["lon"])
-    if t_check < temp_threshold:
+
+    lat = coords["lat"]
+    lon = coords["lon"]
+
+    weather_data = get_unified_weather(lat, lon)
+
+    avg_temp = round(
+        (
+            weather_data["temperature_2m_max"][0]
+            + weather_data["temperature_2m_min"][0]
+        ) / 2,
+        1
+    )
+
+    min_temp = weather_data["temperature_2m_min"][0]
+
+    # 新冷区逻辑：
+    # 平均温 < 22°C 且最低温 <= 18°C
+
+    if avg_temp < 22 and min_temp <= 18:
         cold_states_list.append(state)
+
     else:
         warm_states_list.append(state)
 
