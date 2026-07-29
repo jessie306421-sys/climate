@@ -426,12 +426,75 @@ if st.session_state.active_panel == "天气预报":
         st.session_state.current_selected_states = [current_single_state]
         
     with filter_cols[1]:
-        selected_state = st.selectbox(
-            "2. 选择代表州 (State)", 
+        # 多选框
+        selected_states = st.multiselect(
+            "2. 选择代表州 (State) - 可多选",
             options=states_options,
-            index=states_options.index(current_single_state),
-            key="state_single_widget"
+            default=valid_stored_states,
+            key="state_multi_widget"
         )
+    
+        # 批量输入
+        batch_input = st.text_input(
+            "批量输入州名称（英文逗号分隔）",
+            placeholder="Texas (Austin), Florida (Tallahassee)"
+        )
+    
+        # 解析批量输入
+        if batch_input.strip():
+        
+            input_states = [
+                s.strip()
+                for s in batch_input.split(",")
+                if s.strip()
+            ]
+        
+            valid_batch_states = []
+        
+            # 支持：
+            # Texas
+            # texas
+            # Texas (Austin)
+        
+            for user_input in input_states:
+        
+                user_input_lower = user_input.lower()
+        
+                for full_state_name in states_options:
+        
+                    full_state_lower = full_state_name.lower()
+        
+                    # 完全匹配
+                    if user_input_lower == full_state_lower:
+                        valid_batch_states.append(full_state_name)
+                        break
+        
+                    # 州名匹配
+                    state_only = full_state_name.split(" (")[0].lower()
+        
+                    if user_input_lower == state_only:
+                        valid_batch_states.append(full_state_name)
+                        break
+        
+            # 合并去重
+            selected_states = list(
+                dict.fromkeys(
+                    selected_states + valid_batch_states
+                )
+            )
+    
+            # 合并去重
+            selected_states = list(
+                dict.fromkeys(
+                    selected_states + valid_batch_states
+                )
+            )
+    
+        if not selected_states:
+            st.warning("请至少选择一个代表州加载趋势图。")
+            st.stop()
+    
+        st.session_state.current_selected_states = selected_states
         st.session_state.current_selected_states = [selected_state]
     selected_states = [selected_state]
 else:
@@ -832,6 +895,104 @@ elif st.session_state.active_panel == "天气趋势":
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    # ==========================================
+    # 平均温趋势图
+    # ==========================================
+
+    avg_fig = go.Figure()
+
+    avg_fig.add_trace(go.Scatter(
+        x=x_timeline,
+        y=averaged_trend,
+        mode='lines+markers',
+        name='平均温趋势',
+        line=dict(color='#2563EB', width=4),
+        marker=dict(size=8)
+    ))
+
+    avg_fig.add_hline(
+        y=avg_temp_threshold,
+        line_width=1.5,
+        line_dash="dot",
+        line_color="#64748B",
+        annotation_text=f"平均温阈值 {avg_temp_threshold}°C",
+        annotation_position="bottom right"
+    )
+
+    avg_fig.update_layout(
+        title="📈 平均温趋势分析",
+        plot_bgcolor='#FFFFFF',
+        paper_bgcolor='rgba(0,0,0,0)',
+        height=500,
+        yaxis=dict(
+            title="平均温 (°C)",
+            ticksuffix="°C"
+        )
+    )
+
+    st.plotly_chart(avg_fig, use_container_width=True)
+
+    # ==========================================
+    # 最低温趋势图
+    # ==========================================
+
+    min_temp_trend = []
+
+    for i in range(len(x_timeline)):
+
+        min_values = []
+
+        for s in selected_states:
+
+            if "未来5周" in forecast_span:
+
+                # 周趋势没有真实最低温
+                min_values.append(
+                    y_data_per_state[s][i] - 5
+                )
+
+            else:
+
+                min_values.append(
+                    states_weather_data[s]["temperature_2m_min"][i]
+                )
+
+        min_temp_trend.append(
+            round(np.mean(min_values), 1)
+        )
+
+    min_fig = go.Figure()
+
+    min_fig.add_trace(go.Scatter(
+        x=x_timeline,
+        y=min_temp_trend,
+        mode='lines+markers',
+        name='最低温趋势',
+        line=dict(color='#EF4444', width=4),
+        marker=dict(size=8)
+    ))
+
+    min_fig.add_hline(
+        y=min_temp_threshold,
+        line_width=1.5,
+        line_dash="dot",
+        line_color="#94A3B8",
+        annotation_text=f"最低温阈值 {min_temp_threshold}°C",
+        annotation_position="bottom right"
+    )
+
+    min_fig.update_layout(
+        title="🌙 最低温趋势分析",
+        plot_bgcolor='#FFFFFF',
+        paper_bgcolor='rgba(0,0,0,0)',
+        height=500,
+        yaxis=dict(
+            title="最低温 (°C)",
+            ticksuffix="°C"
+        )
+    )
+
+    st.plotly_chart(min_fig, use_container_width=True)
 
     # ==========================================
     # 智能气候分析结论卡
