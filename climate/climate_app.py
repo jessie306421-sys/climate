@@ -484,7 +484,8 @@ else:
         # 批量输入
         batch_input = st.text_input(
             "批量输入州名称（英文逗号分隔）",
-            placeholder="Texas, Florida, California"
+            placeholder="Texas, Florida, California",
+            key="batch_input_widget"
         )
 
         # 解析批量输入
@@ -536,26 +537,14 @@ else:
                     selected_states + matched_states
                 )
             )
-            # 自动扩展 options，避免被冷暖区过滤
-            for s in matched_states:
-                if s not in states_options:
-                    states_options.append(s)
-
-            states_options = sorted(list(set(states_options)))
+            
+            # 直接更新 multiselect 的状态
+            st.session_state.state_multi_widget = selected_states
+            
+            # 同步全局状态
             st.session_state.current_selected_states = selected_states
-            st.rerun()
-
-        if not selected_states:
-
-            st.warning(
-                "请至少选择一个代表州加载趋势图。"
-            )
-
-            st.stop()
-
-    st.session_state.current_selected_states = (
-        selected_states
-    )
+            # 清空输入框
+            st.session_state["batch_input_widget"] = ""
 
 # 安全划分单州/多州数据提取
 if len(selected_states) == 1:
