@@ -502,7 +502,7 @@ else:
 
                 user_input_lower = user_input.lower()
 
-                for full_state_name in states_options:
+                for full_state_name in US_CAPITALS.keys():
 
                     full_name_lower = (
                         full_state_name.lower()
@@ -536,6 +536,8 @@ else:
                     selected_states + matched_states
                 )
             )
+            st.session_state.current_selected_states = selected_states
+            st.rerun()
 
         if not selected_states:
 
