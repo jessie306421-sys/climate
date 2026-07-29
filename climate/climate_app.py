@@ -428,6 +428,10 @@ if st.session_state.active_panel == "天气预报":
     with filter_cols[1]:
         # 多选框
         selected_states = st.multiselect(
+            batch_input = st.text_input(
+            "批量输入州名称（英文逗号分隔）",
+            placeholder="Texas, Florida, California"
+            )
             "2. 选择代表州 (State) - 可多选",
             options=states_options,
             default=valid_stored_states,
@@ -490,6 +494,44 @@ if st.session_state.active_panel == "天气预报":
                 )
             )
     
+        # 批量输入解析
+        if batch_input.strip():
+        
+            input_states = [
+                s.strip()
+                for s in batch_input.split(",")
+                if s.strip()
+            ]
+        
+            matched_states = []
+        
+            for user_input in input_states:
+        
+                user_input_lower = user_input.lower()
+        
+                for full_state_name in states_options:
+        
+                    # 完整名称
+                    full_name_lower = full_state_name.lower()
+        
+                    # 州名部分
+                    state_only_lower = (
+                        full_state_name.split(" (")[0].lower()
+                    )
+        
+                    if (
+                        user_input_lower == full_name_lower
+                        or user_input_lower == state_only_lower
+                    ):
+                        matched_states.append(full_state_name)
+                        break
+        
+            # 合并去重
+            selected_states = list(
+                dict.fromkeys(
+                    selected_states + matched_states
+                )
+            )
         if not selected_states:
             st.warning("请至少选择一个代表州加载趋势图。")
             st.stop()
@@ -817,7 +859,18 @@ elif st.session_state.active_panel == "天气趋势":
     # ==========================================
     # 趋势折线图绘制与坐标轴范围配置
     # ==========================================
-    fig = go.Figure()
+    state_colors = {}
+
+    plotly_colors = [
+        "#636EFA", "#EF553B", "#00CC96", "#AB63FA",
+        "#FFA15A", "#19D3F3", "#FF6692", "#B6E880",
+        "#FF97FF", "#FECB52", "#1F77B4", "#D62728",
+        "#2CA02C", "#9467BD", "#8C564B"
+    ]
+    
+    for idx, s in enumerate(selected_states):
+        state_colors[s] = plotly_colors[idx % len(plotly_colors)]
+        fig = go.Figure()
     
     # 保证只有一个城市时，不重复绘制单独城市的实线
     if 1 < num_selected <= 15:
@@ -827,7 +880,10 @@ elif st.session_state.active_panel == "天气趋势":
                 y=y_data_per_state[s],
                 mode='lines+markers',                 
                 name=f"{s} 趋势",
-                line=dict(width=2),                  
+                line=dict(
+                    width=2,
+                    color=state_colors[s]
+                ),                  
                 marker=dict(size=6, symbol='circle'), 
                 hoverinfo='all'                       
             ))
@@ -896,18 +952,47 @@ elif st.session_state.active_panel == "天气趋势":
     
     st.plotly_chart(fig, use_container_width=True)
     # ==========================================
-    # 平均温趋势图
+    # 平均温趋势图（完整复刻版）
     # ==========================================
 
     avg_fig = go.Figure()
 
+    if 1 < num_selected <= 15:
+
+        for s in selected_states:
+
+            avg_fig.add_trace(go.Scatter(
+                x=x_timeline,
+                y=y_data_per_state[s],
+                mode='lines+markers',
+                name=f"{s} 平均温",
+                line=dict(
+                    width=2,
+                    color=state_colors[s]
+                ),
+                marker=dict(size=6),
+                hoverinfo='all'
+            ))
+
     avg_fig.add_trace(go.Scatter(
         x=x_timeline,
         y=averaged_trend,
-        mode='lines+markers',
-        name='平均温趋势',
-        line=dict(color='#2563EB', width=4),
-        marker=dict(size=8)
+        mode='lines+markers+text',
+        name="平均温组合均值",
+        line=dict(
+            color=main_color,
+            width=4,
+            dash='dash',
+            shape='spline'
+        ),
+        marker=dict(
+            size=9,
+            symbol='circle',
+            line=dict(color='#FFFFFF', width=1.5)
+        ),
+        text=[f"<b>{v}°</b>" for v in averaged_trend],
+        textposition="top center",
+        textfont=dict(size=11, color="#0F172A")
     ))
 
     avg_fig.add_hline(
@@ -923,76 +1008,123 @@ elif st.session_state.active_panel == "天气趋势":
         title="📈 平均温趋势分析",
         plot_bgcolor='#FFFFFF',
         paper_bgcolor='rgba(0,0,0,0)',
-        height=500,
+        xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
         yaxis=dict(
             title="平均温 (°C)",
-            ticksuffix="°C"
-        )
+            showgrid=True,
+            gridcolor='#F1F5F9',
+            ticksuffix="°C",
+            range=[10, 45]
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.08,
+            x=1,
+            xanchor="right"
+        ),
+        margin=dict(l=40, r=40, t=60, b=40),
+        height=700
     )
 
     st.plotly_chart(avg_fig, use_container_width=True)
 
     # ==========================================
-    # 最低温趋势图
+    # 最低温趋势图（完整复刻版）
     # ==========================================
-
-    min_temp_trend = []
-
-    for i in range(len(x_timeline)):
-
-        min_values = []
-
+    if "未来5周" not in forecast_span:
+        min_y_data_per_state = {}
+    
         for s in selected_states:
+            min_y_data_per_state[s] = [
+                states_weather_data[s]["temperature_2m_min"][i]
+                for i in range(len(x_timeline))
+            ]
 
-            if "未来5周" in forecast_span:
-
-                # 周趋势没有真实最低温
-                min_values.append(
-                    y_data_per_state[s][i] - 5
-                )
-
-            else:
-
-                min_values.append(
-                    states_weather_data[s]["temperature_2m_min"][i]
-                )
-
-        min_temp_trend.append(
-            round(np.mean(min_values), 1)
+        min_averaged_trend = []
+    
+        for i in range(len(x_timeline)):
+    
+            vals = [
+                min_y_data_per_state[s][i]
+                for s in selected_states
+            ]
+    
+            min_averaged_trend.append(
+                round(np.mean(vals), 1)
+            )
+    
+        min_fig = go.Figure()
+    
+        if 1 < num_selected <= 15:
+    
+            for s in selected_states:
+    
+                min_fig.add_trace(go.Scatter(
+                    x=x_timeline,
+                    y=min_y_data_per_state[s],
+                    mode='lines+markers',
+                    name=f"{s} 最低温",
+                    line=dict(
+                        width=2,
+                        color=state_colors[s]
+                    ),
+                    marker=dict(size=6),
+                    hoverinfo='all'
+                ))
+    
+        min_fig.add_trace(go.Scatter(
+            x=x_timeline,
+            y=min_averaged_trend,
+            mode='lines+markers+text',
+            name="最低温组合均值",
+            line=dict(
+                color='#EF4444',
+                width=4,
+                dash='dash',
+                shape='spline'
+            ),
+            marker=dict(
+                size=9,
+                symbol='circle',
+                line=dict(color='#FFFFFF', width=1.5)
+            ),
+            text=[f"<b>{v}°</b>" for v in min_averaged_trend],
+            textposition="top center",
+            textfont=dict(size=11, color="#0F172A")
+        ))
+    
+        min_fig.add_hline(
+            y=min_temp_threshold,
+            line_width=1.5,
+            line_dash="dot",
+            line_color="#94A3B8",
+            annotation_text=f"最低温阈值 {min_temp_threshold}°C",
+            annotation_position="bottom right"
         )
-
-    min_fig = go.Figure()
-
-    min_fig.add_trace(go.Scatter(
-        x=x_timeline,
-        y=min_temp_trend,
-        mode='lines+markers',
-        name='最低温趋势',
-        line=dict(color='#EF4444', width=4),
-        marker=dict(size=8)
-    ))
-
-    min_fig.add_hline(
-        y=min_temp_threshold,
-        line_width=1.5,
-        line_dash="dot",
-        line_color="#94A3B8",
-        annotation_text=f"最低温阈值 {min_temp_threshold}°C",
-        annotation_position="bottom right"
-    )
-
-    min_fig.update_layout(
-        title="🌙 最低温趋势分析",
-        plot_bgcolor='#FFFFFF',
-        paper_bgcolor='rgba(0,0,0,0)',
-        height=500,
-        yaxis=dict(
-            title="最低温 (°C)",
-            ticksuffix="°C"
+    
+        min_fig.update_layout(
+            title="🌙 最低温趋势分析",
+            plot_bgcolor='#FFFFFF',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
+            yaxis=dict(
+                title="最低温 (°C)",
+                showgrid=True,
+                gridcolor='#F1F5F9',
+                ticksuffix="°C",
+                range=[10, 45]
+            ),
+            legend=dict(
+                orientation="h",
+                y=1.08,
+                x=1,
+                xanchor="right"
+            ),
+            margin=dict(l=40, r=40, t=60, b=40),
+            height=700
         )
-    )
-
-    st.plotly_chart(min_fig, use_container_width=True)
+    
+        st.plotly_chart(min_fig, use_container_width=True)
 
     # ==========================================
     # 智能气候分析结论卡
