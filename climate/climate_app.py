@@ -536,6 +536,12 @@ else:
                     selected_states + matched_states
                 )
             )
+            # 自动扩展 options，避免被冷暖区过滤
+            for s in matched_states:
+                if s not in states_options:
+                    states_options.append(s)
+
+states_options = sorted(list(set(states_options)))
             st.session_state.current_selected_states = selected_states
             st.rerun()
 
