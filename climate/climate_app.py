@@ -671,11 +671,11 @@ elif st.session_state.active_panel == "天气趋势":
             showgrid=True, 
             gridcolor='#F1F5F9', 
             ticksuffix="°C", 
-            range=[0, 40]  
+            range=[10, 45]  
         ),
         legend=dict(orientation="h", y=1.08, x=1, xanchor="right"),
         margin=dict(l=40, r=40, t=20, b=40),
-        height=470
+        height=600
     )
     
     st.plotly_chart(fig, use_container_width=True)
