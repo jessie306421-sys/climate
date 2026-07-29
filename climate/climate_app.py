@@ -541,7 +541,7 @@ else:
                 if s not in states_options:
                     states_options.append(s)
 
-states_options = sorted(list(set(states_options)))
+            states_options = sorted(list(set(states_options)))
             st.session_state.current_selected_states = selected_states
             st.rerun()
 
