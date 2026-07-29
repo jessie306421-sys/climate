@@ -428,10 +428,6 @@ if st.session_state.active_panel == "天气预报":
     with filter_cols[1]:
         # 多选框
         selected_states = st.multiselect(
-            batch_input = st.text_input(
-            "批量输入州名称（英文逗号分隔）",
-            placeholder="Texas, Florida, California"
-            )
             "2. 选择代表州 (State) - 可多选",
             options=states_options,
             default=valid_stored_states,
