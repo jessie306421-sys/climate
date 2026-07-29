@@ -473,7 +473,16 @@ if len(selected_states) == 1:
             active_weather_main = get_unified_weather(state_lat, state_lon)
         
     state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
-    state_zone = "冷区 (Cold)" if state_calc_temp < temp_threshold else "暖区 (Warm)"
+    today_min_temp = active_weather_main["temperature_2m_min"][0]
+
+    state_zone = (
+        "冷区 (Cold)"
+        if (
+            state_calc_temp < avg_temp_threshold
+            and today_min_temp <= min_temp_threshold
+        )
+        else "暖区 (Warm)"
+    )
     zone_emoji = "❄️" if "冷" in state_zone else "☀️"
     
     with filter_cols[2]:
@@ -496,7 +505,23 @@ else:
         simulated_flags.append(s_data.get("is_simulated", False))
     
     avg_temp = round(np.mean(temps), 1)
-    avg_zone = "冷区 (Cold)" if avg_temp < temp_threshold else "暖区 (Warm)"
+    avg_min_temp = np.mean([
+        get_unified_weather(
+            US_CAPITALS[s]["lat"],
+            US_CAPITALS[s]["lon"]
+        )["temperature_2m_min"][0]
+        for s in selected_states
+    ])
+
+avg_zone = (
+        "冷区 (Cold)"
+        if (
+            avg_temp < avg_temp_threshold
+            and avg_min_temp <= min_temp_threshold
+        )
+        else "暖区 (Warm)"
+    )
+
     zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
     
     with filter_cols[2]:
@@ -654,14 +679,14 @@ elif st.session_state.active_panel == "天气趋势":
     if "未来7天" in forecast_span:
 
         available_days = min(
-        7,
+            7,
             len(states_weather_data[selected_states[0]]["time"])
-    )
+        )
 
         x_timeline = [
             states_weather_data[selected_states[0]]["time"][i]
             for i in range(available_days)
-    ]
+        ]
 
         y_data_per_state = {}
 
