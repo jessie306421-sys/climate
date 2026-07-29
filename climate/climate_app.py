@@ -1103,7 +1103,7 @@ elif st.session_state.active_panel == "天气趋势":
                 showgrid=True,
                 gridcolor='#F1F5F9',
                 ticksuffix="°C",
-                range=[10, 45]
+                range=[5, 35]
             ),
             legend=dict(
                 orientation="h",
