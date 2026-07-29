@@ -522,7 +522,7 @@ else:
             else "暖区 (Warm)"
         )
 
-        zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
+    zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
     
     with filter_cols[2]:
         st.metric(
