@@ -477,7 +477,7 @@ else:
         selected_states = st.multiselect(
             "2. 选择代表州 (State) - 可多选",
             options=states_options,
-            default=valid_stored_states,
+            default=st.session_state.current_selected_states,
             key="state_multi_widget"
         )
 
@@ -540,12 +540,7 @@ else:
             
             # 同步全局状态
             st.session_state.current_selected_states = selected_states
-
-            # 清空输入框
-            st.session_state["batch_input_widget"] = ""
-            
-            # 刷新页面
-            st.rerun()
+         
 
 # 安全划分单州/多州数据提取
 if len(selected_states) == 1:
