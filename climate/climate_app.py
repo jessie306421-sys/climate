@@ -538,13 +538,14 @@ else:
                 )
             )
             
-            # 直接更新 multiselect 的状态
-            st.session_state.state_multi_widget = selected_states
-            
             # 同步全局状态
             st.session_state.current_selected_states = selected_states
+
             # 清空输入框
             st.session_state["batch_input_widget"] = ""
+            
+            # 刷新页面
+            st.rerun()
 
 # 安全划分单州/多州数据提取
 if len(selected_states) == 1:
