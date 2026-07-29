@@ -513,16 +513,16 @@ else:
         for s in selected_states
     ])
 
-avg_zone = (
-        "冷区 (Cold)"
-        if (
-            avg_temp < avg_temp_threshold
-            and avg_min_temp <= min_temp_threshold
+    avg_zone = (
+            "冷区 (Cold)"
+            if (
+                avg_temp < avg_temp_threshold
+                and avg_min_temp <= min_temp_threshold
+            )
+            else "暖区 (Warm)"
         )
-        else "暖区 (Warm)"
-    )
 
-    zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
+        zone_emoji = "❄️" if "冷" in avg_zone else "☀️"
     
     with filter_cols[2]:
         st.metric(
