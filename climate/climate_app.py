@@ -424,15 +424,15 @@ if len(selected_states) == 1:
         active_weather_main = get_nws_forecast(state_lat, state_lon)
     else:
 
-    forecast_span_current = st.session_state.get(
-        "span_selector",
-        "未来14天 (Next 14 Days)"
-    )
+        forecast_span_current = st.session_state.get(
+            "span_selector",
+            "未来14天 (Next 14 Days)"
+        )
 
-    if "未来7天" in forecast_span_current:
-        active_weather_main = get_nws_forecast(state_lat, state_lon)
-    else:
-        active_weather_main = get_unified_weather(state_lat, state_lon)
+        if "未来7天" in forecast_span_current:
+            active_weather_main = get_nws_forecast(state_lat, state_lon)
+        else:
+            active_weather_main = get_unified_weather(state_lat, state_lon)
         
     state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
     state_zone = "冷区 (Cold)" if state_calc_temp < temp_threshold else "暖区 (Warm)"
