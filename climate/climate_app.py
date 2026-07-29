@@ -619,7 +619,7 @@ elif st.session_state.active_panel == "天气趋势":
     fig = go.Figure()
     
     # 保证只有一个城市时，不重复绘制单独城市的实线
-    if 1 < num_selected <= 5:
+    if 1 < num_selected <= 15:
         for s in selected_states:
             fig.add_trace(go.Scatter(
                 x=x_timeline, 
