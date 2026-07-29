@@ -423,6 +423,15 @@ if len(selected_states) == 1:
     if st.session_state.active_panel == "天气预报":
         active_weather_main = get_nws_forecast(state_lat, state_lon)
     else:
+
+    forecast_span_current = st.session_state.get(
+        "span_selector",
+        "未来14天 (Next 14 Days)"
+    )
+
+    if "未来7天" in forecast_span_current:
+        active_weather_main = get_nws_forecast(state_lat, state_lon)
+    else:
         active_weather_main = get_unified_weather(state_lat, state_lon)
         
     state_calc_temp = round(np.mean([active_weather_main["temperature_2m_max"][0], active_weather_main["temperature_2m_min"][0]]), 1)
@@ -556,56 +565,122 @@ if st.session_state.active_panel == "天气预报":
         with cols_grid[col_idx]:
             st.markdown(card_html, unsafe_allow_html=True)
 
-
 # ==========================================
-# 10. 面板 B 渲染：天气趋势 (Open-Meteo 多选趋势对比)
+# 10. 面板 B 渲染：天气趋势
 # ==========================================
 elif st.session_state.active_panel == "天气趋势":
+
     num_selected = len(selected_states)
-    
-    # 动态条件标题逻辑：单城市显示该城市名趋势，多城市显示“美国多区气候趋势”
-    if num_selected == 1:
-        st.subheader(f"📈 {selected_states[0]} • 中期趋势 (基于Open-Meteo)")
-    else:
-        st.subheader("📈 美国多区气候 • 中期趋势 (基于Open-Meteo)")
-    
+
+    # 预测跨度选择
     forecast_span = st.selectbox(
         "选择预测跨度 (Forecast Range):",
-        options=["未来7天 (Next 7 Days)", "未来14天 (Next 14 Days)", "未来5周 (Next 5 Weeks)"],
+        options=[
+            "未来7天 (Next 7 Days)",
+            "未来14天 (Next 14 Days)",
+            "未来5周 (Next 5 Weeks)"
+        ],
         key="span_selector"
     )
-    
+
+    # 动态标题与数据源
+    trend_source = "NWS" if "未来7天" in forecast_span else "Open-Meteo"
+
+    if num_selected == 1:
+        st.subheader(f"📈 {selected_states[0]} • 中期趋势 (基于{trend_source})")
+    else:
+        st.subheader(f"📈 美国多区气候 • 中期趋势 (基于{trend_source})")
+
+    # ==========================================
+    # 动态加载数据源
+    # ==========================================
     states_weather_data = {}
+
     for s in selected_states:
-        s_lat, s_lon = US_CAPITALS[s]["lat"], US_CAPITALS[s]["lon"]
-        states_weather_data[s] = get_unified_weather(s_lat, s_lon)
-    
+
+        s_lat = US_CAPITALS[s]["lat"]
+        s_lon = US_CAPITALS[s]["lon"]
+
+        # 未来7天 -> 使用 NWS
+        if "未来7天" in forecast_span:
+            states_weather_data[s] = get_nws_forecast(s_lat, s_lon)
+
+        # 未来14天 / 未来5周 -> 使用 Open-Meteo
+        else:
+            states_weather_data[s] = get_unified_weather(s_lat, s_lon)
+
+    # ==========================================
+    # 数据处理
+    # ==========================================
+
     if "未来7天" in forecast_span:
-        x_timeline = [states_weather_data[selected_states[0]]["time"][i] for i in range(7)]
+
+        available_days = min(
+        7,
+            len(states_weather_data[selected_states[0]]["time"])
+    )
+
+        x_timeline = [
+            states_weather_data[selected_states[0]]["time"][i]
+            for i in range(available_days)
+    ]
+
         y_data_per_state = {}
+
         for s in selected_states:
             y_data_per_state[s] = [
-                round((states_weather_data[s]["temperature_2m_max"][i] + states_weather_data[s]["temperature_2m_min"][i]) / 2, 1)
-                for i in range(7)
+                round(
+                    (
+                        states_weather_data[s]["temperature_2m_max"][i]
+                        + states_weather_data[s]["temperature_2m_min"][i]
+                    ) / 2,
+                    1
+                )
+                for i in range(available_days)
             ]
+
         y_axis_title = "日平均气温 (°C)"
-        
+
     elif "未来14天" in forecast_span:
-        x_timeline = [states_weather_data[selected_states[0]]["time"][i] for i in range(14)]
+
+        x_timeline = [
+            states_weather_data[selected_states[0]]["time"][i]
+            for i in range(14)
+        ]
+
         y_data_per_state = {}
+
         for s in selected_states:
             y_data_per_state[s] = [
-                round((states_weather_data[s]["temperature_2m_max"][i] + states_weather_data[s]["temperature_2m_min"][i]) / 2, 1)
+                round(
+                    (
+                        states_weather_data[s]["temperature_2m_max"][i]
+                        + states_weather_data[s]["temperature_2m_min"][i]
+                    ) / 2,
+                    1
+                )
                 for i in range(14)
             ]
+
         y_axis_title = "日平均气温 (°C)"
-        
+
     else:
-        x_timeline = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
+
+        x_timeline = [
+            "Week 1",
+            "Week 2",
+            "Week 3",
+            "Week 4",
+            "Week 5"
+        ]
+
         y_data_per_state = {}
+
         for s in selected_states:
             y_data_per_state[s] = states_weather_data[s]["weeks_trend"]
+
         y_axis_title = "周平均气温 (°C)"
+
 
     points_count = len(x_timeline)
     averaged_trend = []
