@@ -124,11 +124,26 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 侧边栏
-st.sidebar.header("⚙️ 决策阈值")
-temp_threshold = st.sidebar.slider(
-    "冷暖区判定阈值设定 (°C)",
-    min_value=10.0, max_value=25.0, value=16.0, step=0.5
+# ==========================================
+# 侧边栏：双条件冷区筛选
+# ==========================================
+
+st.sidebar.header("⚙️ 冷区判定条件")
+
+avg_temp_threshold = st.sidebar.slider(
+    "平均温阈值 (°C)",
+    min_value=10.0,
+    max_value=30.0,
+    value=22.0,
+    step=0.5
+)
+
+min_temp_threshold = st.sidebar.slider(
+    "最低温阈值 (°C)",
+    min_value=0.0,
+    max_value=25.0,
+    value=18.0,
+    step=0.5
 )
 
 
@@ -341,7 +356,10 @@ for state, coords in US_CAPITALS.items():
     # 新冷区逻辑：
     # 平均温 < 22°C 且最低温 <= 18°C
 
-    if avg_temp < 22 and min_temp <= 18:
+    if (
+        avg_temp < avg_temp_threshold
+        and min_temp <= min_temp_threshold
+    ):
         cold_states_list.append(state)
 
     else:
@@ -732,7 +750,11 @@ elif st.session_state.active_panel == "天气趋势":
     elif "暖区" in selected_zone_filter:
         main_color = '#EF4444' 
     else:
-        main_color = '#EF4444' if np.mean(averaged_trend) >= temp_threshold else '#3B82F6'
+        main_color = (
+            '#EF4444'
+            if np.mean(averaged_trend) >= avg_temp_threshold
+            else '#3B82F6'
+        )
 
     # 绘制平均趋势主虚线
     # 动态调整主线的 name 图例名称：单城市显示其城市名趋势，多城市显示“所选组合均值”
@@ -749,11 +771,11 @@ elif st.session_state.active_panel == "天气趋势":
 
     # 判定阈值线
     fig.add_hline(
-        y=temp_threshold, 
+        y=avg_temp_threshold, 
         line_width=1.5, 
         line_dash="dot", 
         line_color="#64748B",
-        annotation_text=f"判定阈值 {temp_threshold}°C",
+        annotation_text=f"平均温阈值 {avg_temp_threshold}°C",
         annotation_position="bottom right"
     )
 
@@ -781,7 +803,10 @@ elif st.session_state.active_panel == "天气趋势":
     st.write("---")
     
     trend_symbol = "↗ 逐步上升" if averaged_trend[-1] > averaged_trend[0] else ("↘ 逐步下降" if averaged_trend[-1] < averaged_trend[0] else "→ 基本平稳")
-    is_cold = np.mean(averaged_trend) < temp_threshold
+    is_cold = (
+        np.mean(averaged_trend)
+        < avg_temp_threshold
+    )
     rec_tags = "秋装服饰 / 防风外套 / 针织衫 / 卫衣" if is_cold else "夏季服饰 / 轻薄T恤 / 户外用品 / 防晒产品"
     
     analysis_html = f"""
