@@ -795,6 +795,7 @@ elif st.session_state.active_panel == "天气趋势":
     ))
 
     # 判定阈值线
+    # 平均温阈值线
     fig.add_hline(
         y=avg_temp_threshold, 
         line_width=1.5, 
@@ -802,6 +803,16 @@ elif st.session_state.active_panel == "天气趋势":
         line_color="#64748B",
         annotation_text=f"平均温阈值 {avg_temp_threshold}°C",
         annotation_position="bottom right"
+    )
+
+    # 最低温阈值线
+    fig.add_hline(
+        y=min_temp_threshold,
+        line_width=1.5,
+        line_dash="dot",
+        line_color="#94A3B8",
+        annotation_text=f"最低温阈值 {min_temp_threshold}°C",
+        annotation_position="top right"
     )
 
     fig.update_layout(
