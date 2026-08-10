@@ -145,7 +145,12 @@ min_temp_threshold = st.sidebar.slider(
     value=18.0,
     step=0.5
 )
+st.sidebar.markdown("---")
 
+st.sidebar.link_button(
+    "📄 查看 Google Sheets 数据库",
+    "https://docs.google.com/spreadsheets/d/18ZsyMM0Cg9dYU21BOPEmrN8u1Tx8VYEWiTzGtLGESEk/edit?gid=348140528#gid=348140528"
+)
 
 # ==========================================
 # 4. 数据仿真备用层（移除湿度、风速依赖）
