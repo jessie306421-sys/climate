@@ -1111,6 +1111,105 @@ elif st.session_state.active_panel == "天气趋势":
         st.plotly_chart(min_fig, use_container_width=True)
 
     # ==========================================
+    # 最高温趋势图（完整复刻版）
+    # ==========================================
+    if "未来5周" not in forecast_span:
+
+        max_y_data_per_state = {}
+
+        for s in selected_states:
+            max_y_data_per_state[s] = [
+                states_weather_data[s]["temperature_2m_max"][i]
+                for i in range(len(x_timeline))
+            ]
+
+        max_averaged_trend = []
+
+        for i in range(len(x_timeline)):
+
+            vals = [
+                max_y_data_per_state[s][i]
+                for s in selected_states
+            ]
+
+            max_averaged_trend.append(
+                round(np.mean(vals), 1)
+            )
+
+        max_fig = go.Figure()
+
+        if 1 < num_selected <= 15:
+
+            for s in selected_states:
+
+                max_fig.add_trace(go.Scatter(
+                    x=x_timeline,
+                    y=max_y_data_per_state[s],
+                    mode='lines+markers',
+                    name=f"{s} 最高温",
+                    line=dict(
+                        width=2,
+                        color=state_colors[s]
+                    ),
+                    marker=dict(size=6),
+                    hoverinfo='all'
+                ))
+
+        max_fig.add_trace(go.Scatter(
+            x=x_timeline,
+            y=max_averaged_trend,
+            mode='lines+markers+text',
+            name="最高温组合均值",
+            line=dict(
+                color='#F97316',
+                width=4,
+                dash='dash',
+                shape='spline'
+            ),
+            marker=dict(
+                size=9,
+                symbol='circle',
+                line=dict(color='#FFFFFF', width=1.5)
+            ),
+            text=[f"<b>{v}°</b>" for v in max_averaged_trend],
+            textposition="top center",
+            textfont=dict(size=11, color="#0F172A")
+        ))
+
+        max_fig.add_hline(
+            y=avg_temp_threshold,
+            line_width=1.5,
+            line_dash="dot",
+            line_color="#64748B",
+            annotation_text=f"平均温阈值 {avg_temp_threshold}°C",
+            annotation_position="bottom right"
+        )
+
+        max_fig.update_layout(
+            title="☀️ 最高温趋势分析",
+            plot_bgcolor='#FFFFFF',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
+            yaxis=dict(
+                title="最高温 (°C)",
+                showgrid=True,
+                gridcolor='#F1F5F9',
+                ticksuffix="°C",
+                range=[15, 45]
+            ),
+            legend=dict(
+                orientation="h",
+                y=1.08,
+                x=1,
+                xanchor="right"
+            ),
+            margin=dict(l=40, r=40, t=60, b=40),
+            height=700
+        )
+
+        st.plotly_chart(max_fig, use_container_width=True)
+
+    # ==========================================
     # 智能气候分析结论卡
     # ==========================================
     st.write("---")
